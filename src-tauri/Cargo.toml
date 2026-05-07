@@ -1,0 +1,36 @@
+[package]
+name = "linx"
+version = "0.1.0"
+description = "Linx - SSH 终端管理桌面应用"
+authors = ["ckun333"]
+license = "MIT"
+edition = "2021"
+
+[build-dependencies]
+tauri-build = { version = "1", features = [] }
+
+[dependencies]
+# Tauri
+tauri = { version = "1", features = ["shell-open"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+anyhow = "1"
+
+# SSH
+ssh2 = "0.9"
+
+# 数据库
+rusqlite = { version = "0.31", features = ["bundled"] }
+
+# 系统监控（本地机器信息，非 SSH 监控）
+sysinfo = "0.30"
+
+# 异步运行时
+tokio = { version = "1", features = ["full"] }
+
+# 时间处理
+chrono = { version = "0.4", features = ["serde"] }
+
+[features]
+default = ["custom-protocol"]
+custom-protocol = ["tauri/custom-protocol"]
