@@ -6,6 +6,10 @@ authors = ["ckun333"]
 license = "MIT"
 edition = "2021"
 
+[lib]
+name = "linx_lib"
+crate-type = ["lib", "cdylib", "staticlib"]
+
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
