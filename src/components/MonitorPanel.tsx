@@ -1,9 +1,10 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { ServerStatus } from '../types';
-import { getServerStatus, connectSsh } from '../hooks/useTauri';
+import { getServerStatus } from '../hooks/useTauri';
 
 interface MonitorPanelProps {
   serverId: number | null;
+  refreshKey?: number;
 }
 
 /**
@@ -18,7 +19,7 @@ interface MonitorPanelProps {
  * Phase 1: 基础数据展示
  * Phase 2: 图表可视化
  */
-function MonitorPanel({ serverId }: MonitorPanelProps) {
+function MonitorPanel({ serverId, refreshKey }: MonitorPanelProps) {
   const [status, setStatus] = useState<ServerStatus | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -31,17 +32,10 @@ function MonitorPanel({ serverId }: MonitorPanelProps) {
     setError(null);
 
     try {
-      // 确保已连接
-      await connectSsh(serverId);
       const data = await getServerStatus(serverId);
       setStatus(data);
     } catch (err) {
       setError(String(err));
-      // 连接失败时停止轮询
-      if (pollingRef.current) {
-        clearInterval(pollingRef.current);
-        pollingRef.current = null;
-      }
     } finally {
       setLoading(false);
     }
@@ -71,7 +65,7 @@ function MonitorPanel({ serverId }: MonitorPanelProps) {
         pollingRef.current = null;
       }
     };
-  }, [serverId, fetchStatus]);
+  }, [serverId, fetchStatus, refreshKey]);
 
   // 格式化字节数
   const formatBytes = (bytes: number): string => {
@@ -115,10 +109,7 @@ function MonitorPanel({ serverId }: MonitorPanelProps) {
 
       {error && (
         <div className="monitor-error">
-          <p>获取失败</p>
-          <button className="btn btn-small" onClick={fetchStatus}>
-            重试
-          </button>
+          <p>未连接</p>
         </div>
       )}
 
@@ -138,16 +129,27 @@ function MonitorPanel({ serverId }: MonitorPanelProps) {
 
           {/* CPU */}
           <div className="metric-card">
-            <div className="metric-label">CPU</div>
-            <div className="metric-value">
-              {status.cpu_usage.toFixed(1)}%
-            </div>
-            <div className="metric-bar">
+            <div className="metric-label">CPU（总计 {status.cpu_usage.toFixed(1)}%）</div>
+            <div className="metric-bar" style={{ marginBottom: 8 }}>
               <div
                 className={`metric-bar-fill ${status.cpu_usage > 80 ? 'danger' : status.cpu_usage > 50 ? 'warn' : 'normal'}`}
                 style={{ width: `${Math.min(status.cpu_usage, 100)}%` }}
               />
             </div>
+            {status.cpu_cores.map((usage, i) => (
+              <div key={i} style={{ marginBottom: 4 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: 'var(--text-muted)', marginBottom: 2 }}>
+                  <span>CPU {i}</span>
+                  <span>{usage.toFixed(1)}%</span>
+                </div>
+                <div className="metric-bar" style={{ height: 3 }}>
+                  <div
+                    className={`metric-bar-fill ${usage > 80 ? 'danger' : usage > 50 ? 'warn' : 'normal'}`}
+                    style={{ width: `${Math.min(usage, 100)}%` }}
+                  />
+                </div>
+              </div>
+            ))}
           </div>
 
           {/* 内存 */}

@@ -2,27 +2,29 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import { Terminal as XtermTerminal } from 'xterm';
 import { FitAddon } from 'xterm-addon-fit';
 import { WebLinksAddon } from 'xterm-addon-web-links';
-import { connectSsh, disconnectSsh, execSsh } from '../hooks/useTauri';
+import { listen, type UnlistenFn } from '@tauri-apps/api/event';
+import { startShell, writeSsh, resizeSsh, disconnectSsh } from '../hooks/useTauri';
 
 import 'xterm/css/xterm.css';
 
 interface TerminalProps {
   serverId: number;
+  autoConnectTick?: number;
 }
 
 /**
- * SSH 终端组件
+ * SSH 终端组件（交互式 PTY 模式）
  *
  * 基于 xterm.js + FitAddon + WebLinksAddon，通过 Tauri 后端 SSH 连接
- * 支持:
- * - 连接到远程服务器
- * - 执行命令并显示输出
- * - 自适应容器大小
+ * 使用 start_shell / write_ssh / resize_ssh 实现双向 PTY 交互
+ * 通过 terminal-output 事件接收后端输出
  */
-function Terminal({ serverId }: TerminalProps) {
+function Terminal({ serverId, autoConnectTick }: TerminalProps) {
   const terminalRef = useRef<HTMLDivElement>(null);
   const xtermRef = useRef<XtermTerminal | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
+  const unlistenRef = useRef<UnlistenFn | null>(null);
+  const connectedRef = useRef(false);
   const [connected, setConnected] = useState(false);
   const [connecting, setConnecting] = useState(false);
   const [connectionError, setConnectionError] = useState<string | null>(null);
@@ -35,7 +37,7 @@ function Terminal({ serverId }: TerminalProps) {
       cursorBlink: true,
       cursorStyle: 'block',
       fontSize: 14,
-      fontFamily: "'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace",
+      fontFamily: "'Consolas', 'Cascadia Code', 'DejaVu Sans Mono', 'Ubuntu Mono', 'Fira Code', 'JetBrains Mono', monospace",
       rows: 30,
       cols: 80,
       theme: {
@@ -62,27 +64,30 @@ function Terminal({ serverId }: TerminalProps) {
       },
     });
 
-    // 安装插件
     const fitAddon = new FitAddon();
     term.loadAddon(fitAddon);
     term.loadAddon(new WebLinksAddon());
     fitAddonRef.current = fitAddon;
 
-    // 挂载到 DOM
     term.open(terminalRef.current);
 
-    // 延迟自适应（等待 DOM 渲染完成）
     setTimeout(() => fitAddon.fit(), 50);
 
-    // 监听窗口大小变化
     const handleResize = () => fitAddon.fit();
     window.addEventListener('resize', handleResize);
 
-    // 监听输入
     term.onData((data) => {
-      // Phase 1: 简单命令执行模式
-      // Phase 2: 将改为真正的 PTY 交互
-      term.write(data);
+      writeSsh(serverId, data).catch((err) => {
+        term.writeln(`\x1b[31m写入失败: ${err}\x1b[0m`);
+      });
+    });
+
+    term.onResize(({ cols, rows }) => {
+      if (connectedRef.current) {
+        resizeSsh(serverId, cols, rows).catch((err) => {
+          console.error('resize_ssh 失败:', err);
+        });
+      }
     });
 
     xtermRef.current = term;
@@ -93,28 +98,46 @@ function Terminal({ serverId }: TerminalProps) {
       xtermRef.current = null;
       fitAddonRef.current = null;
     };
-  }, []);
+  }, [serverId]);
 
-  // 连接 SSH
+  // 双击自动连接（每次 autoConnectTick 变化重新触发）
+  const prevTickRef = useRef(0);
+  useEffect(() => {
+    if (autoConnectTick && autoConnectTick !== prevTickRef.current) {
+      prevTickRef.current = autoConnectTick;
+      if (!connected && !connecting) {
+        handleConnect();
+      }
+    }
+  }, [autoConnectTick]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const handleConnect = useCallback(async () => {
     setConnecting(true);
     setConnectionError(null);
     const term = xtermRef.current;
+    const fitAddon = fitAddonRef.current;
 
     try {
       term?.writeln(`\x1b[32m正在连接到服务器...\x1b[0m`);
-      const result = await connectSsh(serverId);
+      const result = await startShell(serverId);
       term?.writeln(`\x1b[32m${result}\x1b[0m`);
-      setConnected(true);
 
-      // 发送一个测试命令验证连接
-      try {
-        const uname = await execSsh(serverId, 'uname -a');
-        term?.writeln(`\x1b[36m${uname}\x1b[0m`);
-        term?.writeln(`\x1b[32m连接成功！\x1b[0m`);
-      } catch {
-        // 即使命令失败，连接本身是成功的
+      const unlisten = await listen('terminal-output', (event: { payload: { server_id: number; data: string } }) => {
+        if (event.payload.server_id === serverId) {
+          term?.write(event.payload.data);
+        }
+      });
+      unlistenRef.current = unlisten;
+
+      if (fitAddon) {
+        fitAddon.fit();
+        const cols = term?.cols ?? 80;
+        const rows = term?.rows ?? 30;
+        await resizeSsh(serverId, cols, rows);
       }
+
+      setConnected(true);
+      connectedRef.current = true;
     } catch (err) {
       const msg = String(err);
       term?.writeln(`\x1b[31m连接失败: ${msg}\x1b[0m`);
@@ -124,13 +147,19 @@ function Terminal({ serverId }: TerminalProps) {
     }
   }, [serverId]);
 
-  // 断开连接
   const handleDisconnect = useCallback(async () => {
     const term = xtermRef.current;
+
+    if (unlistenRef.current) {
+      unlistenRef.current();
+      unlistenRef.current = null;
+    }
+
     try {
       await disconnectSsh(serverId);
       term?.writeln(`\x1b[33m连接已断开\x1b[0m`);
       setConnected(false);
+      connectedRef.current = false;
     } catch (err) {
       term?.writeln(`\x1b[31m断开失败: ${err}\x1b[0m`);
     }
@@ -138,7 +167,6 @@ function Terminal({ serverId }: TerminalProps) {
 
   return (
     <div className="terminal-container">
-      {/* 工具栏 */}
       <div className="terminal-toolbar">
         <span className="terminal-title">终端 - 服务器 #{serverId}</span>
         <div className="terminal-actions">
@@ -158,10 +186,8 @@ function Terminal({ serverId }: TerminalProps) {
         </div>
       </div>
 
-      {/* xterm 终端 */}
       <div className="terminal-wrapper" ref={terminalRef} />
 
-      {/* 错误信息 */}
       {connectionError && (
         <div className="terminal-error">
           {connectionError}
