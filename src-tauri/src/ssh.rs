@@ -112,7 +112,7 @@ impl SshConnection {
     /// 断开连接
     pub fn disconnect(&self) -> Result<()> {
         let session = self.session.lock().map_err(|e| anyhow::anyhow!("锁获取失败: {}", e))?;
-        session.disconnect(ssh2::DisconnectCode::Normal, "正常断开", "")
+        session.disconnect(Some(ssh2::DisconnectCode::Normal), "正常断开", None::<&str>)
             .context("断开 SSH 连接失败")?;
         Ok(())
     }
