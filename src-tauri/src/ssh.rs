@@ -2,6 +2,8 @@ use std::net::TcpStream;
 use std::path::Path;
 use std::sync::Mutex;
 
+use std::io::Read;
+
 use anyhow::{Context, Result};
 use ssh2::{ Session, Sftp };
 
@@ -53,7 +55,7 @@ impl SshConnection {
                 }
 
                 session
-                    .userauth_pubkey_file(username, None, Path::new(key_path), password.as_derefed())
+                    .userauth_pubkey_file(username, None, Path::new(key_path), password.as_deref())
                     .context("SSH 密钥认证失败")?;
             }
             AuthType::Password => {
@@ -110,7 +112,7 @@ impl SshConnection {
     /// 断开连接
     pub fn disconnect(&self) -> Result<()> {
         let session = self.session.lock().map_err(|e| anyhow::anyhow!("锁获取失败: {}", e))?;
-        session.disconnect(Some("正常断开"), None, None)
+        session.disconnect(ssh2::DisconnectCode::Normal, "正常断开", "")
             .context("断开 SSH 连接失败")?;
         Ok(())
     }
@@ -149,9 +151,9 @@ impl SshConnection {
                 path: entry_path.to_string_lossy().to_string(),
                 is_dir: stat.is_dir(),
                 is_symlink: stat.file_type().is_symlink(),
-                size: stat.size,
-                permissions: stat.perm,
-                modified: stat.mtime,
+                size: stat.size.unwrap_or(0),
+                permissions: stat.perm.unwrap_or(0),
+                modified: stat.mtime.unwrap_or(0),
             });
         }
 
