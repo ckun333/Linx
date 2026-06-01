@@ -2,7 +2,7 @@
 name = "linx"
 version = "0.1.0"
 description = "Linx - SSH 终端管理桌面应用"
-authors = ["ckun333"]
+authors = ["L1uY4n9"]
 license = "MIT"
 edition = "2021"
 
