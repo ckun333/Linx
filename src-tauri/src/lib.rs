@@ -4,6 +4,7 @@ use std::sync::Mutex;
 use anyhow::Result;
 
 mod commands;
+mod crypto;
 mod db;
 mod models;
 mod monitor;
@@ -39,6 +40,7 @@ fn init_state() -> Result<AppState> {
     Ok(AppState {
         db: Mutex::new(database),
         connections: Mutex::new(HashMap::new()),
+        shells: Mutex::new(HashMap::new()),
     })
 }
 
@@ -49,6 +51,7 @@ pub fn run() {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_dialog::init())
         .manage(state)
         .invoke_handler(tauri::generate_handler![
             // 分组
@@ -58,6 +61,8 @@ pub fn run() {
             commands::delete_group,
             // 服务器
             commands::get_servers,
+            commands::get_server_for_edit,
+            commands::check_server_connectivity,
             commands::create_server,
             commands::update_server,
             commands::delete_server,
@@ -65,6 +70,10 @@ pub fn run() {
             commands::connect_ssh,
             commands::disconnect_ssh,
             commands::exec_ssh,
+            // PTY Shell
+            commands::start_shell,
+            commands::write_ssh,
+            commands::resize_ssh,
             // SFTP
             commands::list_dir,
             // 监控
@@ -72,6 +81,9 @@ pub fn run() {
             // 配置
             commands::export_config,
             commands::import_config,
+            commands::export_config_to_file,
+            commands::import_config_from_file,
+            commands::confirm_import_config,
         ])
         .run(tauri::generate_context!())
         .expect("启动 Linx 失败");
