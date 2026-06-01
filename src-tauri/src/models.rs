@@ -41,7 +41,8 @@ fn default_port() -> u16 {
 pub struct ServerStatus {
     pub server_id: i64,
     pub online: bool,
-    pub cpu_usage: f64,      // CPU 使用率百分比
+    pub cpu_usage: f64,      // CPU 使用率百分比（总）
+    pub cpu_cores: Vec<f64>, // 每个逻辑核心的使用率
     pub memory_usage: f64,   // 内存使用率百分比
     pub memory_total: u64,   // 总内存 (bytes)
     pub memory_used: u64,    // 已用内存 (bytes)

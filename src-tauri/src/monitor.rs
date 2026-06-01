@@ -8,9 +8,8 @@ use crate::ssh::SshConnection;
 ///
 /// 读取 /proc/stat, /proc/meminfo, /proc/net/dev 获取系统指标
 pub fn get_remote_server_status(conn: &SshConnection, server_id: i64) -> Result<ServerStatus> {
-    // 并行采集各项指标
     let cpu_output = conn.exec_command(
-        "cat /proc/stat | head -1"
+        "cat /proc/stat"
     )?;
 
     let mem_output = conn.exec_command(
@@ -25,8 +24,7 @@ pub fn get_remote_server_status(conn: &SshConnection, server_id: i64) -> Result<
         "df / | tail -1 | awk '{print $5}' | sed 's/%//'"
     )?;
 
-    // 解析 CPU 使用率
-    let cpu_usage = parse_cpu_usage(&cpu_output)?;
+    let (cpu_usage, cpu_cores) = parse_cpu_usage(&cpu_output)?;
 
     // 解析内存信息
     let (memory_total, memory_used, memory_usage) = parse_memory_info(&mem_output)?;
@@ -41,6 +39,7 @@ pub fn get_remote_server_status(conn: &SshConnection, server_id: i64) -> Result<
         server_id,
         online: true,
         cpu_usage,
+        cpu_cores,
         memory_usage,
         memory_total,
         memory_used,
@@ -51,31 +50,56 @@ pub fn get_remote_server_status(conn: &SshConnection, server_id: i64) -> Result<
     })
 }
 
-/// 解析 /proc/stat 的第一行（CPU 总时间）
-fn parse_cpu_usage(output: &str) -> Result<f64> {
-    // 格式: cpu  user nice system idle iowait irq softirq steal guest guest_nice
-    let parts: Vec<&str> = output.split_whitespace().collect();
-    if parts.len() < 5 {
-        anyhow::bail!("无法解析 CPU 统计信息");
+/// 从 /proc/stat 内容解析 CPU 使用率
+///
+/// 返回 (总使用率, 各逻辑核心使用率)
+fn parse_cpu_usage(output: &str) -> Result<(f64, Vec<f64>)> {
+    let mut total_usage = 0.0f64;
+    let mut core_usages: Vec<f64> = Vec::new();
+
+    for line in output.lines() {
+        // 解析以 "cpu" 开头的行（cpu、cpu0、cpu1...）
+        if !line.starts_with("cpu") {
+            continue;
+        }
+
+        let parts: Vec<&str> = line.split_whitespace().collect();
+        if parts.len() < 5 {
+            continue;
+        }
+
+        let user: u64 = parts.get(1).unwrap_or(&"0").parse().unwrap_or(0);
+        let nice: u64 = parts.get(2).unwrap_or(&"0").parse().unwrap_or(0);
+        let system: u64 = parts.get(3).unwrap_or(&"0").parse().unwrap_or(0);
+        let idle: u64 = parts.get(4).unwrap_or(&"0").parse().unwrap_or(0);
+        let iowait: u64 = parts.get(5).unwrap_or(&"0").parse().unwrap_or(0);
+        let irq: u64 = parts.get(6).unwrap_or(&"0").parse().unwrap_or(0);
+        let softirq: u64 = parts.get(7).unwrap_or(&"0").parse().unwrap_or(0);
+        let steal: u64 = parts.get(8).unwrap_or(&"0").parse().unwrap_or(0);
+
+        let total = user + nice + system + idle + iowait + irq + softirq + steal;
+        let non_idle = total - idle;
+
+        if total == 0 {
+            continue;
+        }
+
+        let usage = (non_idle as f64 / total as f64) * 100.0;
+
+        if line.starts_with("cpu") && line.as_bytes().get(3).map_or(false, |&b| b.is_ascii_digit()) {
+            // cpuN 行：按核心
+            core_usages.push(usage);
+        } else if line.starts_with("cpu ") {
+            // cpu 行：总和
+            total_usage = usage;
+        }
     }
 
-    let user: u64 = parts.get(1).unwrap_or(&"0").parse().unwrap_or(0);
-    let nice: u64 = parts.get(2).unwrap_or(&"0").parse().unwrap_or(0);
-    let system: u64 = parts.get(3).unwrap_or(&"0").parse().unwrap_or(0);
-    let idle: u64 = parts.get(4).unwrap_or(&"0").parse().unwrap_or(0);
-    let iowait: u64 = parts.get(5).unwrap_or(&"0").parse().unwrap_or(0);
-    let irq: u64 = parts.get(6).unwrap_or(&"0").parse().unwrap_or(0);
-    let softirq: u64 = parts.get(7).unwrap_or(&"0").parse().unwrap_or(0);
-    let steal: u64 = parts.get(8).unwrap_or(&"0").parse().unwrap_or(0);
-
-    let total = user + nice + system + idle + iowait + irq + softirq + steal;
-    let non_idle = total - idle;
-
-    if total == 0 {
-        return Ok(0.0);
+    if core_usages.is_empty() {
+        anyhow::bail!("未找到 CPU 核心信息");
     }
 
-    Ok((non_idle as f64 / total as f64) * 100.0)
+    Ok((total_usage, core_usages))
 }
 
 /// 解析 /proc/meminfo
@@ -188,6 +212,7 @@ pub fn get_local_status() -> Result<ServerStatus> {
         server_id: 0,
         online: true,
         cpu_usage,
+        cpu_cores: vec![cpu_usage],
         memory_usage,
         memory_total,
         memory_used,
