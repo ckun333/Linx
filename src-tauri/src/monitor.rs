@@ -173,7 +173,15 @@ pub fn get_local_status() -> Result<ServerStatus> {
     // 磁盘使用率
     let disks = Disks::new_with_refreshed_list();
     let disk_usage = disks.iter().next()
-        .map(|d| d.usage() as f64)
+        .map(|d| {
+            let total = d.total_space();
+            let available = d.available_space();
+            if total > 0 {
+                ((total - available) as f64 / total as f64) * 100.0
+            } else {
+                0.0
+            }
+        })
         .unwrap_or(0.0);
 
     Ok(ServerStatus {
