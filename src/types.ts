@@ -27,6 +27,7 @@ export interface ServerStatus {
   server_id: number;
   online: boolean;
   cpu_usage: number;
+  cpu_cores: number[];
   memory_usage: number;
   memory_total: number;
   memory_used: number;
