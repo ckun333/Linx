@@ -48,6 +48,7 @@ pub fn run() {
     let state = init_state().expect("初始化应用状态失败");
 
     tauri::Builder::default()
+        .plugin(tauri_plugin_opener::init())
         .manage(state)
         .invoke_handler(tauri::generate_handler![
             // 分组

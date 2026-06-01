@@ -18,7 +18,7 @@ export async function invoke<T>(cmd: string, args?: Record<string, unknown>): Pr
     return getMockData<T>(cmd, args);
   }
 
-  const { invoke: tauriInvoke } = await import('@tauri-apps/api/tauri');
+  const { invoke: tauriInvoke } = await import('@tauri-apps/api/core');
   return tauriInvoke<T>(cmd, args);
 }
 

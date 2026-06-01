@@ -18,14 +18,14 @@ pub struct AppState {
 
 // ==================== 分组命令 ====================
 
-#[tauri::command]
-pub fn get_groups(state: State<AppState>) -> Result<Vec<ServerGroup>, String> {
+#[tauri::command(rename_all = "camelCase")]
+pub fn get_groups(state: State<'_, AppState>) -> Result<Vec<ServerGroup>, String> {
     let db = state.db.lock().map_err(|e| e.to_string())?;
     db.get_all_groups().map_err(|e| e.to_string())
 }
 
-#[tauri::command]
-pub fn create_group(state: State<AppState>, name: String, sort_order: i32) -> Result<ServerGroup, String> {
+#[tauri::command(rename_all = "camelCase")]
+pub fn create_group(state: State<'_, AppState>, name: String, sort_order: i32) -> Result<ServerGroup, String> {
     let db = state.db.lock().map_err(|e| e.to_string())?;
     let group = ServerGroup {
         id: None,
@@ -35,8 +35,8 @@ pub fn create_group(state: State<AppState>, name: String, sort_order: i32) -> Re
     db.create_group(&group).map_err(|e| e.to_string())
 }
 
-#[tauri::command]
-pub fn update_group(state: State<AppState>, id: i64, name: String, sort_order: i32) -> Result<(), String> {
+#[tauri::command(rename_all = "camelCase")]
+pub fn update_group(state: State<'_, AppState>, id: i64, name: String, sort_order: i32) -> Result<(), String> {
     let db = state.db.lock().map_err(|e| e.to_string())?;
     let group = ServerGroup {
         id: Some(id),
@@ -46,23 +46,23 @@ pub fn update_group(state: State<AppState>, id: i64, name: String, sort_order: i
     db.update_group(&group).map_err(|e| e.to_string())
 }
 
-#[tauri::command]
-pub fn delete_group(state: State<AppState>, id: i64) -> Result<(), String> {
+#[tauri::command(rename_all = "camelCase")]
+pub fn delete_group(state: State<'_, AppState>, id: i64) -> Result<(), String> {
     let db = state.db.lock().map_err(|e| e.to_string())?;
     db.delete_group(id).map_err(|e| e.to_string())
 }
 
 // ==================== 服务器命令 ====================
 
-#[tauri::command]
-pub fn get_servers(state: State<AppState>) -> Result<Vec<Server>, String> {
+#[tauri::command(rename_all = "camelCase")]
+pub fn get_servers(state: State<'_, AppState>) -> Result<Vec<Server>, String> {
     let db = state.db.lock().map_err(|e| e.to_string())?;
     db.get_all_servers().map_err(|e| e.to_string())
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "camelCase")]
 pub fn create_server(
-    state: State<AppState>,
+    state: State<'_, AppState>,
     group_id: Option<i64>,
     name: String,
     host: String,
@@ -94,9 +94,9 @@ pub fn create_server(
     db.create_server(&server).map_err(|e| e.to_string())
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "camelCase")]
 pub fn update_server(
-    state: State<AppState>,
+    state: State<'_, AppState>,
     id: i64,
     group_id: Option<i64>,
     name: String,
@@ -129,17 +129,17 @@ pub fn update_server(
     db.update_server(&server).map_err(|e| e.to_string())
 }
 
-#[tauri::command]
-pub fn delete_server(state: State<AppState>, id: i64) -> Result<(), String> {
+#[tauri::command(rename_all = "camelCase")]
+pub fn delete_server(state: State<'_, AppState>, id: i64) -> Result<(), String> {
     let db = state.db.lock().map_err(|e| e.to_string())?;
     db.delete_server(id).map_err(|e| e.to_string())
 }
 
 // ==================== SSH 连接命令 ====================
 
-#[tauri::command]
+#[tauri::command(rename_all = "camelCase")]
 pub fn connect_ssh(
-    state: State<AppState>,
+    state: State<'_, AppState>,
     server_id: i64,
 ) -> Result<String, String> {
     // 从数据库读取服务器信息
@@ -168,8 +168,8 @@ pub fn connect_ssh(
     Ok(format!("已连接到 {}", server.name))
 }
 
-#[tauri::command]
-pub fn disconnect_ssh(state: State<AppState>, server_id: i64) -> Result<String, String> {
+#[tauri::command(rename_all = "camelCase")]
+pub fn disconnect_ssh(state: State<'_, AppState>, server_id: i64) -> Result<String, String> {
     let mut connections = state.connections.lock().map_err(|e| e.to_string())?;
     if let Some(conn) = connections.remove(&server_id) {
         conn.disconnect().map_err(|e| format!("断开连接失败: {}", e))?;
@@ -179,8 +179,8 @@ pub fn disconnect_ssh(state: State<AppState>, server_id: i64) -> Result<String, 
     }
 }
 
-#[tauri::command]
-pub fn exec_ssh(state: State<AppState>, server_id: i64, command: String) -> Result<String, String> {
+#[tauri::command(rename_all = "camelCase")]
+pub fn exec_ssh(state: State<'_, AppState>, server_id: i64, command: String) -> Result<String, String> {
     let connections = state.connections.lock().map_err(|e| e.to_string())?;
     let conn = connections.get(&server_id)
         .ok_or_else(|| "未找到活跃连接，请先连接".to_string())?;
@@ -190,9 +190,9 @@ pub fn exec_ssh(state: State<AppState>, server_id: i64, command: String) -> Resu
 
 // ==================== SFTP 命令 ====================
 
-#[tauri::command]
+#[tauri::command(rename_all = "camelCase")]
 pub fn list_dir(
-    state: State<AppState>,
+    state: State<'_, AppState>,
     server_id: i64,
     path: String,
 ) -> Result<Vec<RemoteFileInfo>, String> {
@@ -205,8 +205,8 @@ pub fn list_dir(
 
 // ==================== 监控命令 ====================
 
-#[tauri::command]
-pub fn get_server_status(state: State<AppState>, server_id: i64) -> Result<ServerStatus, String> {
+#[tauri::command(rename_all = "camelCase")]
+pub fn get_server_status(state: State<'_, AppState>, server_id: i64) -> Result<ServerStatus, String> {
     let connections = state.connections.lock().map_err(|e| e.to_string())?;
     let conn = connections.get(&server_id)
         .ok_or_else(|| "未找到活跃连接，请先连接".to_string())?;
@@ -217,14 +217,14 @@ pub fn get_server_status(state: State<AppState>, server_id: i64) -> Result<Serve
 
 // ==================== 配置导入/导出 ====================
 
-#[tauri::command]
-pub fn export_config(state: State<AppState>) -> Result<ConfigExport, String> {
+#[tauri::command(rename_all = "camelCase")]
+pub fn export_config(state: State<'_, AppState>) -> Result<ConfigExport, String> {
     let db = state.db.lock().map_err(|e| e.to_string())?;
     db.export_config().map_err(|e| e.to_string())
 }
 
-#[tauri::command]
-pub fn import_config(state: State<AppState>, config: ConfigExport) -> Result<(), String> {
+#[tauri::command(rename_all = "camelCase")]
+pub fn import_config(state: State<'_, AppState>, config: ConfigExport) -> Result<(), String> {
     let db = state.db.lock().map_err(|e| e.to_string())?;
     db.import_config(&config).map_err(|e| e.to_string())
 }
