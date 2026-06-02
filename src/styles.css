@@ -317,8 +317,89 @@ html, body, #root {
 }
 
 /* ===================================================================
+   TabBar
+   =================================================================== */
+
+.tab-bar {
+  display: flex;
+  align-items: stretch;
+  height: 32px;
+  background: var(--bg-tertiary);
+  border-bottom: 1px solid var(--border);
+  overflow-x: auto;
+  flex-shrink: 0;
+}
+
+.tab-bar::-webkit-scrollbar {
+  height: 0;
+}
+
+.tab-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 12px;
+  font-size: 12px;
+  color: var(--text-muted);
+  cursor: pointer;
+  border-right: 1px solid var(--border);
+  white-space: nowrap;
+  user-select: none;
+  transition: background 0.15s, color 0.15s;
+  min-width: 0;
+}
+
+.tab-item:hover {
+  background: var(--bg-hover);
+  color: var(--text-secondary);
+}
+
+.tab-item.active {
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+}
+
+.tab-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 150px;
+}
+
+.tab-close {
+  flex-shrink: 0;
+  background: none;
+  border: none;
+  color: inherit;
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  padding: 0;
+  opacity: 0.4;
+  transition: opacity 0.15s;
+}
+
+.tab-close:hover {
+  opacity: 1;
+}
+
+.tab-item.active .tab-close {
+  opacity: 0.6;
+}
+
+/* ===================================================================
    Terminal
    =================================================================== */
+
+.terminal-pane {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.terminal-pane.inactive {
+  display: none;
+}
 
 .terminal-container {
   display: flex;
@@ -1001,4 +1082,84 @@ select.form-input {
 
 ::-webkit-scrollbar-thumb:hover {
   background: var(--text-muted);
+}
+
+/* ===================================================================
+   Toast Notifications
+   =================================================================== */
+
+.toast-container {
+  position: fixed;
+  top: 12px;
+  right: 12px;
+  z-index: 9999;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  pointer-events: none;
+  max-width: 420px;
+}
+
+.toast {
+  pointer-events: auto;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px 14px;
+  border-radius: 6px;
+  font-size: 13px;
+  line-height: 1.5;
+  user-select: text;
+  animation: toastSlideIn 0.25s ease;
+  word-break: break-all;
+}
+
+.toast-error {
+  background: rgba(247, 118, 142, 0.15);
+  border: 1px solid var(--danger);
+  color: var(--danger);
+}
+
+.toast-success {
+  background: rgba(158, 206, 106, 0.15);
+  border: 1px solid var(--success);
+  color: var(--success);
+}
+
+.toast-info {
+  background: rgba(122, 162, 247, 0.15);
+  border: 1px solid var(--accent);
+  color: var(--accent);
+}
+
+.toast-message {
+  flex: 1;
+  min-width: 0;
+}
+
+.toast-close {
+  flex-shrink: 0;
+  background: none;
+  border: none;
+  color: inherit;
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+  opacity: 0.6;
+  padding: 0 2px;
+}
+
+.toast-close:hover {
+  opacity: 1;
+}
+
+@keyframes toastSlideIn {
+  from {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
 }

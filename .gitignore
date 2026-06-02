@@ -36,3 +36,8 @@ Thumbs.db
 # Tauri
 src-tauri/binaries/
 src-tauri/target/
+
+# Dev database
+linx_dev.db
+linx_dev.db-shm
+linx_dev.db-wal
