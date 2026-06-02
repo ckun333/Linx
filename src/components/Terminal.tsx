@@ -3,13 +3,15 @@ import { Terminal as XtermTerminal } from 'xterm';
 import { FitAddon } from 'xterm-addon-fit';
 import { WebLinksAddon } from 'xterm-addon-web-links';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
-import { startShell, writeSsh, resizeSsh, disconnectSsh } from '../hooks/useTauri';
+import { startShell, writeSsh, resizeSsh, disconnectSsh, getServers } from '../hooks/useTauri';
 
 import 'xterm/css/xterm.css';
 
 interface TerminalProps {
   serverId: number;
-  autoConnectTick?: number;
+  shouldAutoConnect?: boolean;
+  onConnected?: (serverId: number) => void;
+  onDisconnected?: (serverId: number) => void;
 }
 
 /**
@@ -19,7 +21,7 @@ interface TerminalProps {
  * 使用 start_shell / write_ssh / resize_ssh 实现双向 PTY 交互
  * 通过 terminal-output 事件接收后端输出
  */
-function Terminal({ serverId, autoConnectTick }: TerminalProps) {
+function Terminal({ serverId, shouldAutoConnect, onConnected, onDisconnected }: TerminalProps) {
   const terminalRef = useRef<HTMLDivElement>(null);
   const xtermRef = useRef<XtermTerminal | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
@@ -28,6 +30,16 @@ function Terminal({ serverId, autoConnectTick }: TerminalProps) {
   const [connected, setConnected] = useState(false);
   const [connecting, setConnecting] = useState(false);
   const [connectionError, setConnectionError] = useState<string | null>(null);
+  const [serverName, setServerName] = useState<string>('');
+
+  useEffect(() => {
+    getServers().then((servers) => {
+      const server = servers.find((s) => s.id === serverId);
+      setServerName(server?.name ?? `服务器 #${serverId}`);
+    }).catch(() => {
+      setServerName(`服务器 #${serverId}`);
+    });
+  }, [serverId]);
 
   // 初始化 xterm.js
   useEffect(() => {
@@ -76,9 +88,10 @@ function Terminal({ serverId, autoConnectTick }: TerminalProps) {
     const handleResize = () => fitAddon.fit();
     window.addEventListener('resize', handleResize);
 
+    const termRef = xtermRef;
     term.onData((data) => {
       writeSsh(serverId, data).catch((err) => {
-        term.writeln(`\x1b[31m写入失败: ${err}\x1b[0m`);
+        termRef.current?.writeln(`\x1b[31m写入失败: ${err}\x1b[0m`);
       });
     });
 
@@ -100,52 +113,50 @@ function Terminal({ serverId, autoConnectTick }: TerminalProps) {
     };
   }, [serverId]);
 
-  // 双击自动连接（每次 autoConnectTick 变化重新触发）
-  const prevTickRef = useRef(0);
-  useEffect(() => {
-    if (autoConnectTick && autoConnectTick !== prevTickRef.current) {
-      prevTickRef.current = autoConnectTick;
-      if (!connected && !connecting) {
-        handleConnect();
-      }
-    }
-  }, [autoConnectTick]); // eslint-disable-line react-hooks/exhaustive-deps
-
   const handleConnect = useCallback(async () => {
+    if (connected || connecting) return;
     setConnecting(true);
     setConnectionError(null);
-    const term = xtermRef.current;
     const fitAddon = fitAddonRef.current;
 
+    xtermRef.current?.writeln(`\x1b[32m正在连接到服务器...\x1b[0m`);
     try {
-      term?.writeln(`\x1b[32m正在连接到服务器...\x1b[0m`);
       const result = await startShell(serverId);
-      term?.writeln(`\x1b[32m${result}\x1b[0m`);
+      xtermRef.current?.writeln(`\x1b[32m${result}\x1b[0m`);
 
       const unlisten = await listen('terminal-output', (event: { payload: { server_id: number; data: string } }) => {
         if (event.payload.server_id === serverId) {
-          term?.write(event.payload.data);
+          // 使用 xtermRef.current 确保写入当前的 xterm 实例
+          xtermRef.current?.write(event.payload.data);
         }
       });
       unlistenRef.current = unlisten;
 
       if (fitAddon) {
         fitAddon.fit();
-        const cols = term?.cols ?? 80;
-        const rows = term?.rows ?? 30;
+        const cols = xtermRef.current?.cols ?? 80;
+        const rows = xtermRef.current?.rows ?? 30;
         await resizeSsh(serverId, cols, rows);
       }
 
       setConnected(true);
       connectedRef.current = true;
+      onConnected?.(serverId);
     } catch (err) {
       const msg = String(err);
-      term?.writeln(`\x1b[31m连接失败: ${msg}\x1b[0m`);
+      xtermRef.current?.writeln(`\x1b[31m连接失败: ${msg}\x1b[0m`);
       setConnectionError(msg);
     } finally {
       setConnecting(false);
     }
-  }, [serverId]);
+  }, [serverId, onConnected]);
+
+  // shouldAutoConnect 为 true 时自动连接
+  useEffect(() => {
+    if (shouldAutoConnect) {
+      handleConnect();
+    }
+  }, [shouldAutoConnect, handleConnect]);
 
   const handleDisconnect = useCallback(async () => {
     const term = xtermRef.current;
@@ -160,15 +171,16 @@ function Terminal({ serverId, autoConnectTick }: TerminalProps) {
       term?.writeln(`\x1b[33m连接已断开\x1b[0m`);
       setConnected(false);
       connectedRef.current = false;
+      onDisconnected?.(serverId);
     } catch (err) {
       term?.writeln(`\x1b[31m断开失败: ${err}\x1b[0m`);
     }
-  }, [serverId]);
+  }, [serverId, onDisconnected]);
 
   return (
     <div className="terminal-container">
       <div className="terminal-toolbar">
-        <span className="terminal-title">终端 - 服务器 #{serverId}</span>
+        <span className="terminal-title">{serverName || `服务器 #${serverId}`}</span>
         <div className="terminal-actions">
           {!connected ? (
             <button

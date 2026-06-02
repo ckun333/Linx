@@ -1,10 +1,12 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef } from 'react';
 import Sidebar from './components/Sidebar';
 import ServerDialog from './components/ServerDialog';
 import GroupDialog from './components/GroupDialog';
 import Terminal from './components/Terminal';
 import MonitorPanel from './components/MonitorPanel';
+import TabBar from './components/TabBar';
 import { deleteGroup } from './hooks/useTauri';
+import type { TabData } from './types';
 
 type DialogType = 'closed' | 'addServer' | 'editServer' | 'addGroup' | 'renameGroup';
 
@@ -15,42 +17,94 @@ interface DialogState {
   groupName?: string;
 }
 
-/**
- * 主应用组件 - 三栏布局
- *
- * 布局结构:
- * ┌──────────────┬─────────────────────┬─────────────┐
- * │  左侧 (收起)  │      主区域          │  右侧 (收起)  │
- * │  服务器列表    │    终端 (xterm)     │  监控面板     │
- * │  + SFTP      │                     │              │
- * └──────────────┴─────────────────────┴─────────────┘
- */
 function App() {
   const [leftOpen, setLeftOpen] = useState(true);
   const [rightOpen, setRightOpen] = useState(true);
 
-  // 当前选中的服务器 ID
-  const [activeServerId, setActiveServerId] = useState<number | null>(null);
-  // 双击触发自增计数器，每次双击+1，Terminal 检测变化后重新连接
-  const [autoConnectTick, setAutoConnectTick] = useState(0);
+  // 多标签页管理
+  const [tabs, setTabs] = useState<TabData[]>([]);
+  const [activeTabId, setActiveTabId] = useState<string | null>(null);
+  const [connectedTabIds, setConnectedTabIds] = useState<Set<string>>(new Set());
+  const tabIdCounter = useRef(0);
+  const [monitorRefreshKey, setMonitorRefreshKey] = useState(0);
+  const [shouldAutoConnectTabId, setShouldAutoConnectTabId] = useState<string | null>(null);
+  const tabsRef = useRef(tabs);
+  tabsRef.current = tabs;
+
+  const activeTab = tabs.find(t => t.id === activeTabId) ?? null;
+
+  // 打开/切换到指定服务器的标签页
+  const openTab = useCallback((serverId: number, serverName: string, autoConnect: boolean) => {
+    const existing = tabsRef.current.find(t => t.serverId === serverId);
+    if (existing) {
+      setActiveTabId(existing.id);
+      if (autoConnect) {
+        setShouldAutoConnectTabId(existing.id);
+        setMonitorRefreshKey(k => k + 1);
+      }
+      return;
+    }
+    const id = `tab-${++tabIdCounter.current}`;
+    setTabs(prev => [...prev, { id, serverId, serverName }]);
+    setActiveTabId(id);
+    if (autoConnect) {
+      setShouldAutoConnectTabId(id);
+      setMonitorRefreshKey(k => k + 1);
+    }
+  }, []);
+
+  const handleSelectServer = useCallback((serverId: number, serverName: string) => {
+    openTab(serverId, serverName, false);
+  }, [openTab]);
+
+  const handleDoubleClickServer = useCallback((serverId: number, serverName: string) => {
+    openTab(serverId, serverName, true);
+  }, [openTab]);
+
+  // 标签页操作
+  const handleSelectTab = useCallback((tabId: string) => {
+    setActiveTabId(tabId);
+  }, []);
+
+  const handleCloseTab = useCallback((tabId: string) => {
+    setTabs(prev => prev.filter(t => t.id !== tabId));
+    setActiveTabId(prev => {
+      if (prev !== tabId) return prev;
+      const remaining = tabsRef.current.filter(t => t.id !== tabId);
+      return remaining.length > 0 ? remaining[remaining.length - 1].id : null;
+    });
+    setConnectedTabIds(prev => {
+      const next = new Set(prev);
+      next.delete(tabId);
+      return next;
+    });
+    setShouldAutoConnectTabId(prev => prev === tabId ? null : prev);
+  }, []);
+
+  const handleTerminalConnected = useCallback((serverId: number) => {
+    const tab = tabsRef.current.find(t => t.serverId === serverId);
+    if (tab) {
+      setConnectedTabIds(prev => new Set(prev).add(tab.id));
+      setShouldAutoConnectTabId(prev => prev === tab.id ? null : prev);
+    }
+  }, []);
+
+  const handleTerminalDisconnected = useCallback((serverId: number) => {
+    const tab = tabsRef.current.find(t => t.serverId === serverId);
+    if (tab) {
+      setConnectedTabIds(prev => {
+        const next = new Set(prev);
+        next.delete(tab.id);
+        return next;
+      });
+    }
+  }, []);
 
   // 对话框状态管理
   const [dialogState, setDialogState] = useState<DialogState>({ type: 'closed' });
-
-  // 刷新 key，用于触发 Sidebar 重新加载数据
   const [refreshKey, setRefreshKey] = useState(0);
   const handleRefreshServerList = useCallback(() => setRefreshKey((k) => k + 1), []);
 
-  const handleSelectServer = useCallback((serverId: number) => {
-    setActiveServerId(serverId);
-  }, []);
-
-  const handleDoubleClickServer = useCallback((serverId: number) => {
-    setActiveServerId(serverId);
-    setAutoConnectTick(t => t + 1);
-  }, []);
-
-  // 对话框控制
   const openDialog = useCallback((state: DialogState) => {
     setDialogState(state);
   }, []);
@@ -62,11 +116,14 @@ function App() {
   const handleDeleted = useCallback(
     (id: number) => {
       handleRefreshServerList();
-      if (id === activeServerId) {
-        setActiveServerId(null);
-      }
+      // 关闭对应服务器标签页
+      setTabs(prev => prev.filter(t => t.serverId !== id));
+      setActiveTabId(() => {
+        const remaining = tabsRef.current.filter(t => t.serverId !== id);
+        return remaining.length > 0 ? remaining[remaining.length - 1].id : null;
+      });
     },
-    [handleRefreshServerList, activeServerId],
+    [handleRefreshServerList],
   );
 
   const handleEditServer = useCallback((id: number) => {
@@ -95,7 +152,7 @@ function App() {
       {/* 左侧面板 */}
       <div className={`panel-left ${leftOpen ? 'open' : 'closed'}`}>
         <Sidebar
-          activeServerId={activeServerId}
+          activeServerId={activeTab?.serverId ?? null}
           onSelectServer={handleSelectServer}
           onDoubleClickServer={handleDoubleClickServer}
           refreshKey={refreshKey}
@@ -116,15 +173,33 @@ function App() {
         {leftOpen ? '◀' : '▶'}
       </button>
 
-      {/* 中间主区域 - 终端 */}
+      {/* 中间主区域 */}
       <div className="panel-center">
-        {activeServerId ? (
-          <Terminal serverId={activeServerId} autoConnectTick={autoConnectTick} />
-        ) : (
+        <TabBar
+          tabs={tabs}
+          activeTabId={activeTabId}
+          onSelectTab={handleSelectTab}
+          onCloseTab={handleCloseTab}
+        />
+        {tabs.length === 0 ? (
           <div className="welcome-screen">
             <h1>Linx</h1>
             <p>从左侧选择一个服务器开始连接</p>
           </div>
+        ) : (
+          tabs.map((tab) => (
+            <div
+              key={tab.id}
+              className={`terminal-pane ${tab.id === activeTabId ? 'active' : 'inactive'}`}
+            >
+              <Terminal
+                serverId={tab.serverId}
+                shouldAutoConnect={tab.id === shouldAutoConnectTabId}
+                onConnected={handleTerminalConnected}
+                onDisconnected={handleTerminalDisconnected}
+              />
+            </div>
+          ))
         )}
       </div>
 
@@ -139,7 +214,11 @@ function App() {
 
       {/* 右侧面板 */}
       <div className={`panel-right ${rightOpen ? 'open' : 'closed'}`}>
-        <MonitorPanel serverId={activeServerId} refreshKey={autoConnectTick} />
+        <MonitorPanel
+          serverId={activeTab?.serverId ?? null}
+          refreshKey={monitorRefreshKey}
+          connectedServerId={activeTab && connectedTabIds.has(activeTab.id) ? activeTab.serverId : null}
+        />
       </div>
 
       {/* 服务器编辑对话框 */}

@@ -48,6 +48,13 @@ export interface RemoteFileInfo {
   modified: number;
 }
 
+/** 终端标签页 */
+export interface TabData {
+  id: string;
+  serverId: number;
+  serverName: string;
+}
+
 /** 导入导出配置 */
 export interface ConfigExport {
   version: string;
