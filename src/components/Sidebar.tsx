@@ -7,8 +7,8 @@ import PasswordPromptDialog from './PasswordPromptDialog';
 
 interface SidebarProps {
   activeServerId: number | null;
-  onSelectServer: (serverId: number) => void;
-  onDoubleClickServer: (serverId: number) => void;
+  onSelectServer: (serverId: number, serverName: string) => void;
+  onDoubleClickServer: (serverId: number, serverName: string) => void;
   refreshKey?: number;
   onAddServer: () => void;
   onEditServer: (id: number) => void;

@@ -7,8 +7,8 @@ interface ServerListProps {
   servers: Server[];
   activeServerId: number | null;
   serverStatuses: Record<number, boolean>;
-  onSelectServer: (serverId: number) => void;
-  onDoubleClickServer: (serverId: number) => void;
+  onSelectServer: (serverId: number, serverName: string) => void;
+  onDoubleClickServer: (serverId: number, serverName: string) => void;
   onRefresh: () => void;
   onEditServer: (id: number) => void;
   onDeleteServer: (id: number) => void;
@@ -112,8 +112,8 @@ function ServerList({
               <div
                 key={server.id}
                 className={`server-item ${activeServerId === server.id ? 'active' : ''}`}
-                onClick={() => server.id && onSelectServer(server.id)}
-                onDoubleClick={() => server.id && onDoubleClickServer(server.id)}
+                onClick={() => server.id && onSelectServer(server.id, server.name)}
+                onDoubleClick={() => server.id && onDoubleClickServer(server.id, server.name)}
                 onContextMenu={(e) => handleContextMenu(e, server)}
               >
                 <div

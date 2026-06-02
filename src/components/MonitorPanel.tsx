@@ -1,10 +1,12 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { ServerStatus } from '../types';
 import { getServerStatus } from '../hooks/useTauri';
+import { useToast } from '../contexts/ToastContext';
 
 interface MonitorPanelProps {
   serverId: number | null;
   refreshKey?: number;
+  connectedServerId?: number | null;
 }
 
 /**
@@ -19,11 +21,32 @@ interface MonitorPanelProps {
  * Phase 1: 基础数据展示
  * Phase 2: 图表可视化
  */
-function MonitorPanel({ serverId, refreshKey }: MonitorPanelProps) {
+function MonitorPanel({ serverId, refreshKey, connectedServerId }: MonitorPanelProps) {
   const [status, setStatus] = useState<ServerStatus | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [currentTime, setCurrentTime] = useState(() => new Date());
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const prevErrorRef = useRef<string | null>(null);
+  const { showToast } = useToast();
+  const prevNetworkRx = useRef<number | null>(null);
+  const prevNetworkTx = useRef<number | null>(null);
+  const prevNetworkTime = useRef<number | null>(null);
+  const [networkRxSpeed, setNetworkRxSpeed] = useState<number | null>(null);
+  const [networkTxSpeed, setNetworkTxSpeed] = useState<number | null>(null);
+
+  useEffect(() => {
+    const timer = setInterval(() => setCurrentTime(new Date()), 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  // 监控错误时弹出提示
+  useEffect(() => {
+    if (error && error !== prevErrorRef.current) {
+      showToast(`监控异常: ${error}`, 'error');
+    }
+    prevErrorRef.current = error;
+  }, [error, showToast]);
 
   const fetchStatus = useCallback(async () => {
     if (serverId === null) return;
@@ -34,6 +57,18 @@ function MonitorPanel({ serverId, refreshKey }: MonitorPanelProps) {
     try {
       const data = await getServerStatus(serverId);
       setStatus(data);
+
+      const now = Date.now();
+      if (prevNetworkRx.current !== null && prevNetworkTx.current !== null && prevNetworkTime.current !== null) {
+        const dt = (now - prevNetworkTime.current) / 1000;
+        if (dt > 0) {
+          setNetworkRxSpeed((data.network_rx - prevNetworkRx.current) / dt);
+          setNetworkTxSpeed((data.network_tx - prevNetworkTx.current) / dt);
+        }
+      }
+      prevNetworkRx.current = data.network_rx;
+      prevNetworkTx.current = data.network_tx;
+      prevNetworkTime.current = now;
     } catch (err) {
       setError(String(err));
     } finally {
@@ -43,7 +78,7 @@ function MonitorPanel({ serverId, refreshKey }: MonitorPanelProps) {
 
   // 当 serverId 变化时启动/停止轮询
   useEffect(() => {
-    if (serverId === null) {
+    if (serverId === null || serverId !== connectedServerId) {
       setStatus(null);
       setError(null);
       if (pollingRef.current) {
@@ -53,11 +88,18 @@ function MonitorPanel({ serverId, refreshKey }: MonitorPanelProps) {
       return;
     }
 
+    // 重置网络速率缓存（新服务器或刷新）
+    prevNetworkRx.current = null;
+    prevNetworkTx.current = null;
+    prevNetworkTime.current = null;
+    setNetworkRxSpeed(null);
+    setNetworkTxSpeed(null);
+
     // 立即获取一次
     fetchStatus();
 
-    // 每 5 秒轮询
-    pollingRef.current = setInterval(fetchStatus, 5000);
+    // 每 3 秒轮询
+    pollingRef.current = setInterval(fetchStatus, 3000);
 
     return () => {
       if (pollingRef.current) {
@@ -65,9 +107,8 @@ function MonitorPanel({ serverId, refreshKey }: MonitorPanelProps) {
         pollingRef.current = null;
       }
     };
-  }, [serverId, fetchStatus, refreshKey]);
+  }, [serverId, fetchStatus, refreshKey, connectedServerId]);
 
-  // 格式化字节数
   const formatBytes = (bytes: number): string => {
     if (bytes === 0) return '0 B';
     const units = ['B', 'KB', 'MB', 'GB', 'TB'];
@@ -75,17 +116,15 @@ function MonitorPanel({ serverId, refreshKey }: MonitorPanelProps) {
     return `${(bytes / Math.pow(1024, i)).toFixed(1)} ${units[i]}`;
   };
 
-  // 格式化时间
-  const formatTime = (iso: string): string => {
-    try {
-      const date = new Date(iso);
-      return date.toLocaleTimeString('zh-CN');
-    } catch {
-      return iso;
-    }
+  const formatSpeed = (bytesPerSec: number): string => {
+    if (bytesPerSec <= 0) return '0 B/s';
+    const units = ['B/s', 'KB/s', 'MB/s', 'GB/s', 'TB/s'];
+    const i = Math.floor(Math.log(bytesPerSec) / Math.log(1024));
+    if (i >= units.length) return `${bytesPerSec.toFixed(1)} B/s`;
+    return `${(bytesPerSec / Math.pow(1024, i)).toFixed(1)} ${units[i]}`;
   };
 
-  if (serverId === null) {
+  if (serverId === null || serverId !== connectedServerId) {
     return (
       <div className="monitor-panel">
         <div className="monitor-header">
@@ -103,13 +142,13 @@ function MonitorPanel({ serverId, refreshKey }: MonitorPanelProps) {
       <div className="monitor-header">
         <h3>监控</h3>
         <span className="monitor-update-time">
-          {status ? formatTime(status.last_checked) : ''}
+          {currentTime.toLocaleTimeString('zh-CN')}
         </span>
       </div>
 
       {error && (
         <div className="monitor-error">
-          <p>未连接</p>
+          <p>{error}</p>
         </div>
       )}
 
@@ -184,8 +223,8 @@ function MonitorPanel({ serverId, refreshKey }: MonitorPanelProps) {
           <div className="metric-card">
             <div className="metric-label">网络</div>
             <div className="metric-value network-row">
-              <span>↓ {formatBytes(status.network_rx)}</span>
-              <span>↑ {formatBytes(status.network_tx)}</span>
+              <span>↓ {networkRxSpeed !== null ? formatSpeed(networkRxSpeed) : '—'}</span>
+              <span>↑ {networkTxSpeed !== null ? formatSpeed(networkTxSpeed) : '—'}</span>
             </div>
           </div>
         </div>
