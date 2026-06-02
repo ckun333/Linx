@@ -1,19 +1,32 @@
 use std::collections::HashMap;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::thread;
 
 use anyhow::Result;
 use tauri::{AppHandle, Emitter, State};
 
 use crate::db::Database;
-use crate::models::{ConfigExport, Server, ServerGroup, ServerStatus};
+use crate::models::{AuthType, ConfigExport, Server, ServerGroup, ServerStatus};
 use crate::monitor;
+use crate::monitor::CpuTickSnapshot;
 use crate::ssh::{InteractiveShell, RemoteFileInfo, SshConnection};
+
+pub(crate) struct ServerCredentials {
+    host: String,
+    port: u16,
+    username: String,
+    auth_type: AuthType,
+    private_key_path: Option<String>,
+    password: Option<String>,
+}
 
 pub struct AppState {
     pub db: Mutex<Database>,
-    pub connections: Mutex<HashMap<i64, SshConnection>>,
+    pub connections: Mutex<HashMap<i64, Arc<SshConnection>>>,
     pub shells: Mutex<HashMap<i64, InteractiveShell>>,
+    pub prev_cpu_stats: Mutex<HashMap<i64, CpuTickSnapshot>>,
+    pub server_creds: Mutex<HashMap<i64, ServerCredentials>>,
+    pub monitor_connections: Mutex<HashMap<i64, Arc<SshConnection>>>,
 }
 
 // ==================== 分组命令 ====================
@@ -158,7 +171,7 @@ pub async fn connect_ssh(
     .map_err(|e| format!("SSH 连接失败: {}", e))?;
 
     let mut connections = state.connections.lock().map_err(|e| e.to_string())?;
-    connections.insert(server_id, conn);
+    connections.insert(server_id, Arc::new(conn));
     Ok(format!("已连接到 {}", host_clone))
 }
 
@@ -180,15 +193,35 @@ pub async fn disconnect_ssh(state: State<'_, AppState>, server_id: i64) -> Resul
         tokio::task::spawn_blocking(move || { shell.close().ok(); }).await.ok();
     }
 
+    {
+        let mut stats = state.prev_cpu_stats.lock().map_err(|e| e.to_string())?;
+        stats.remove(&server_id);
+    }
+    {
+        let mut conns = state.monitor_connections.lock().map_err(|e| e.to_string())?;
+        conns.remove(&server_id);
+    }
+    {
+        let mut creds = state.server_creds.lock().map_err(|e| e.to_string())?;
+        creds.remove(&server_id);
+    }
+
     Ok("已断开连接".to_string())
 }
 
 #[tauri::command(rename_all = "camelCase")]
-pub fn exec_ssh(state: State<'_, AppState>, server_id: i64, command: String) -> Result<String, String> {
-    let connections = state.connections.lock().map_err(|e| e.to_string())?;
-    let conn = connections.get(&server_id)
-        .ok_or_else(|| "未找到活跃连接，请先连接".to_string())?;
-    conn.exec_command(&command).map_err(|e| format!("命令执行失败: {}", e))
+pub async fn exec_ssh(state: State<'_, AppState>, server_id: i64, command: String) -> Result<String, String> {
+    let conn_arc = {
+        let connections = state.connections.lock().map_err(|e| e.to_string())?;
+        connections.get(&server_id)
+            .cloned()
+            .ok_or_else(|| "未找到活跃连接，请先连接".to_string())?
+    };
+    tokio::task::spawn_blocking(move || {
+        conn_arc.exec_command(&command).map_err(|e| format!("命令执行失败: {}", e))
+    })
+    .await
+    .map_err(|e| format!("线程池错误: {}", e))?
 }
 
 // ==================== PTY 交互式终端命令 ====================
@@ -220,17 +253,24 @@ pub async fn start_shell(
             .ok_or_else(|| "未找到服务器".to_string())?;
         let decrypted_password = db.get_server_password(server_id).map_err(|e| e.to_string())?;
         let auth_type = match server.auth_type {
-            crate::models::AuthType::Key => crate::models::AuthType::Key,
-            crate::models::AuthType::Password => crate::models::AuthType::Password,
+            AuthType::Key => AuthType::Key,
+            AuthType::Password => AuthType::Password,
         };
         (server.host, server.port, server.username, auth_type, server.private_key_path, decrypted_password)
     };
 
-    // 创建 PTY shell（同时保存认证信息用于后续创建 monitor 连接）
-    let (host_clone_for_monitor, port_for_monitor, username_for_monitor,
-         auth_type_for_monitor, private_key_path_for_monitor, password_for_monitor) = (
-        host.clone(), port, username.clone(), auth_type.clone(), private_key_path.clone(), password.clone()
-    );
+    // 保存凭证供监控连接使用
+    {
+        let mut creds = state.server_creds.lock().map_err(|e| e.to_string())?;
+        creds.insert(server_id, ServerCredentials {
+            host: host.clone(),
+            port,
+            username: username.clone(),
+            auth_type: auth_type.clone(),
+            private_key_path: private_key_path.clone(),
+            password: password.clone(),
+        });
+    }
 
     let mut shell = tokio::task::spawn_blocking(move || {
         InteractiveShell::connect(server_id, &host, port, &username, &auth_type, &private_key_path, &password)
@@ -243,26 +283,6 @@ pub async fn start_shell(
     {
         let mut shells = state.shells.lock().map_err(|e| e.to_string())?;
         shells.insert(server_id, shell);
-    }
-
-    // 同时建立一个 SshConnection（用于右侧监控面板）
-    let monitor_result = tokio::task::spawn_blocking(move || {
-        SshConnection::connect(
-            server_id,
-            &host_clone_for_monitor,
-            port_for_monitor,
-            &username_for_monitor,
-            &auth_type_for_monitor,
-            &private_key_path_for_monitor,
-            &password_for_monitor,
-        )
-    })
-    .await
-    .map_err(|e| format!("线程池错误: {}", e));
-
-    if let Ok(Ok(conn)) = monitor_result {
-        let mut connections = state.connections.lock().map_err(|e| e.to_string())?;
-        connections.insert(server_id, conn);
     }
 
     let app_clone = app.clone();
@@ -318,12 +338,90 @@ pub fn list_dir(
 // ==================== 监控命令 ====================
 
 #[tauri::command(rename_all = "camelCase")]
-pub fn get_server_status(state: State<'_, AppState>, server_id: i64) -> Result<ServerStatus, String> {
-    let connections = state.connections.lock().map_err(|e| e.to_string())?;
-    let conn = connections.get(&server_id)
-        .ok_or_else(|| "未找到活跃连接，请先连接".to_string())?;
-    monitor::get_remote_server_status(conn, server_id)
-        .map_err(|e| format!("获取状态失败: {}", e))
+pub async fn get_server_status(state: State<'_, AppState>, server_id: i64) -> Result<ServerStatus, String> {
+    // Phase 1: 提取凭证和已有连接（非阻塞，快速）
+    let (creds, existing_conn_opt) = {
+        let creds_map = state.server_creds.lock().map_err(|e| e.to_string())?;
+        let cred = creds_map.get(&server_id)
+            .ok_or_else(|| "未找到服务器凭证，请先连接".to_string())?;
+        let creds = ServerCredentials {
+            host: cred.host.clone(),
+            port: cred.port,
+            username: cred.username.clone(),
+            auth_type: cred.auth_type.clone(),
+            private_key_path: cred.private_key_path.clone(),
+            password: cred.password.clone(),
+        };
+        let monitor_conns = state.monitor_connections.lock().map_err(|e| e.to_string())?;
+        let existing = monitor_conns.get(&server_id).cloned();
+        (creds, existing)
+    };
+
+    // Phase 2: SSH I/O（在 spawn_blocking 中执行，不阻塞主线程）
+    let io_result = tokio::task::spawn_blocking(move || -> Result<(String, String, String, String, Arc<SshConnection>), String> {
+        // 尝试复用已有连接，否则新建
+        let conn: Arc<SshConnection> = match existing_conn_opt {
+            Some(ref c) if c.exec_command("echo ok").is_ok() => c.clone(),
+            _ => Arc::new(
+                SshConnection::connect(
+                    server_id, &creds.host, creds.port, &creds.username,
+                    &creds.auth_type, &creds.private_key_path, &creds.password,
+                ).map_err(|e| format!("创建监控连接失败: {}", e))?
+            ),
+        };
+
+        let cpu = conn.exec_command("cat /proc/stat").map_err(|e| e.to_string())?;
+        let mem = conn.exec_command("cat /proc/meminfo").map_err(|e| e.to_string())?;
+        let net = conn.exec_command("cat /proc/net/dev | tail -n +3").map_err(|e| e.to_string())?;
+        let disk = conn.exec_command("df / | tail -1 | awk '{print $5}' | sed 's/%//'").map_err(|e| e.to_string())?;
+
+        Ok((cpu, mem, net, disk, conn))
+    }).await.map_err(|e| format!("线程池错误: {}", e))?;
+
+    let (cpu_output, mem_output, net_output, disk_output, conn_arc) = io_result?;
+
+    // 缓存连接供下次复用
+    {
+        let mut monitor_conns = state.monitor_connections.lock().map_err(|e| e.to_string())?;
+        monitor_conns.insert(server_id, conn_arc);
+    }
+
+    // Phase 3: 解析结果（非阻塞）
+    let cur_snapshot = monitor::extract_cpu_snapshot(&cpu_output)
+        .map_err(|e| format!("解析 CPU 数据失败: {}", e))?;
+
+    let (cpu_usage, cpu_cores) = {
+        let stats = state.prev_cpu_stats.lock().map_err(|e| e.to_string())?;
+        match stats.get(&server_id) {
+            Some(prev) => monitor::compute_cpu_delta(prev, &cur_snapshot),
+            None => (0.0, vec![0.0; cur_snapshot.cores.len()]),
+        }
+    };
+
+    {
+        let mut stats = state.prev_cpu_stats.lock().map_err(|e| e.to_string())?;
+        stats.insert(server_id, cur_snapshot);
+    }
+
+    let (memory_total, memory_used, memory_usage) = monitor::parse_memory_info(&mem_output)
+        .map_err(|e| format!("解析内存数据失败: {}", e))?;
+    let (network_rx, network_tx) = monitor::parse_network_stats(&net_output)
+        .map_err(|e| format!("解析网络数据失败: {}", e))?;
+    let disk_usage: f64 = disk_output.trim().parse().unwrap_or(0.0);
+
+    Ok(ServerStatus {
+        server_id,
+        online: true,
+        cpu_usage,
+        cpu_cores,
+        memory_usage,
+        memory_total,
+        memory_used,
+        network_rx,
+        network_tx,
+        disk_usage,
+        last_checked: chrono::Utc::now().to_rfc3339(),
+    })
 }
 
 // ==================== 配置导入/导出 ====================

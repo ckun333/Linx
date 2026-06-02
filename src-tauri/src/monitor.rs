@@ -4,10 +4,25 @@ use chrono::Utc;
 use crate::models::ServerStatus;
 use crate::ssh::SshConnection;
 
+/// CPU 累积 tick 快照（用于跨轮询计算差值）
+#[derive(Debug, Clone)]
+pub struct CpuTickSnapshot {
+    /// "cpu" 行的所有 tick 值
+    pub total: Vec<u64>,
+    /// 每个 "cpuN" 行的 tick 值
+    pub cores: Vec<Vec<u64>>,
+}
+
 /// 通过 SSH 获取远程服务器状态（Linux 平台）
 ///
 /// 读取 /proc/stat, /proc/meminfo, /proc/net/dev 获取系统指标
-pub fn get_remote_server_status(conn: &SshConnection, server_id: i64) -> Result<ServerStatus> {
+/// `prev_cpu` 是上一次的 CPU tick 快照，用于计算差值得到实时 CPU 使用率
+#[allow(dead_code)]
+pub fn get_remote_server_status(
+    conn: &SshConnection,
+    server_id: i64,
+    prev_cpu: Option<&CpuTickSnapshot>,
+) -> Result<(ServerStatus, CpuTickSnapshot)> {
     let cpu_output = conn.exec_command(
         "cat /proc/stat"
     )?;
@@ -24,7 +39,11 @@ pub fn get_remote_server_status(conn: &SshConnection, server_id: i64) -> Result<
         "df / | tail -1 | awk '{print $5}' | sed 's/%//'"
     )?;
 
-    let (cpu_usage, cpu_cores) = parse_cpu_usage(&cpu_output)?;
+    let cur_snapshot = extract_cpu_snapshot(&cpu_output)?;
+    let (cpu_usage, cpu_cores) = match prev_cpu {
+        Some(prev) => compute_cpu_delta(prev, &cur_snapshot),
+        None => (0.0, vec![0.0; cur_snapshot.cores.len()]),
+    };
 
     // 解析内存信息
     let (memory_total, memory_used, memory_usage) = parse_memory_info(&mem_output)?;
@@ -35,7 +54,7 @@ pub fn get_remote_server_status(conn: &SshConnection, server_id: i64) -> Result<
     // 解析磁盘使用率
     let disk_usage: f64 = disk_output.trim().parse().unwrap_or(0.0);
 
-    Ok(ServerStatus {
+    Ok((ServerStatus {
         server_id,
         online: true,
         cpu_usage,
@@ -47,18 +66,15 @@ pub fn get_remote_server_status(conn: &SshConnection, server_id: i64) -> Result<
         network_tx,
         disk_usage,
         last_checked: Utc::now().to_rfc3339(),
-    })
+    }, cur_snapshot))
 }
 
-/// 从 /proc/stat 内容解析 CPU 使用率
-///
-/// 返回 (总使用率, 各逻辑核心使用率)
-fn parse_cpu_usage(output: &str) -> Result<(f64, Vec<f64>)> {
-    let mut total_usage = 0.0f64;
-    let mut core_usages: Vec<f64> = Vec::new();
+/// 从 /proc/stat 内容提取所有 cpu 行的 tick 值
+pub fn extract_cpu_snapshot(output: &str) -> Result<CpuTickSnapshot> {
+    let mut total: Option<Vec<u64>> = None;
+    let mut cores: Vec<Vec<u64>> = Vec::new();
 
     for line in output.lines() {
-        // 解析以 "cpu" 开头的行（cpu、cpu0、cpu1...）
         if !line.starts_with("cpu") {
             continue;
         }
@@ -68,42 +84,57 @@ fn parse_cpu_usage(output: &str) -> Result<(f64, Vec<f64>)> {
             continue;
         }
 
-        let user: u64 = parts.get(1).unwrap_or(&"0").parse().unwrap_or(0);
-        let nice: u64 = parts.get(2).unwrap_or(&"0").parse().unwrap_or(0);
-        let system: u64 = parts.get(3).unwrap_or(&"0").parse().unwrap_or(0);
-        let idle: u64 = parts.get(4).unwrap_or(&"0").parse().unwrap_or(0);
-        let iowait: u64 = parts.get(5).unwrap_or(&"0").parse().unwrap_or(0);
-        let irq: u64 = parts.get(6).unwrap_or(&"0").parse().unwrap_or(0);
-        let softirq: u64 = parts.get(7).unwrap_or(&"0").parse().unwrap_or(0);
-        let steal: u64 = parts.get(8).unwrap_or(&"0").parse().unwrap_or(0);
+        let ticks: Vec<u64> = parts[1..]
+            .iter()
+            .map(|&s| s.parse().unwrap_or(0))
+            .collect();
 
-        let total = user + nice + system + idle + iowait + irq + softirq + steal;
-        let non_idle = total - idle;
-
-        if total == 0 {
-            continue;
-        }
-
-        let usage = (non_idle as f64 / total as f64) * 100.0;
-
-        if line.starts_with("cpu") && line.as_bytes().get(3).map_or(false, |&b| b.is_ascii_digit()) {
-            // cpuN 行：按核心
-            core_usages.push(usage);
-        } else if line.starts_with("cpu ") {
-            // cpu 行：总和
-            total_usage = usage;
+        if line.starts_with("cpu ") {
+            total = Some(ticks);
+        } else if line.as_bytes().get(3).map_or(false, |&b| b.is_ascii_digit()) {
+            cores.push(ticks);
         }
     }
 
-    if core_usages.is_empty() {
+    let total = total.ok_or_else(|| anyhow::anyhow!("未找到 cpu 总行"))?;
+    if cores.is_empty() {
         anyhow::bail!("未找到 CPU 核心信息");
     }
 
-    Ok((total_usage, core_usages))
+    Ok(CpuTickSnapshot { total, cores })
+}
+
+/// 根据两次快照计算差值得到的实时 CPU 使用率
+pub fn compute_cpu_delta(prev: &CpuTickSnapshot, cur: &CpuTickSnapshot) -> (f64, Vec<f64>) {
+    let calc = |prev_ticks: &[u64], cur_ticks: &[u64]| -> f64 {
+        let min_len = prev_ticks.len().min(cur_ticks.len());
+        if min_len < 4 {
+            return 0.0;
+        }
+        let prev_total: u64 = prev_ticks[..min_len].iter().sum();
+        let cur_total: u64 = cur_ticks[..min_len].iter().sum();
+        let prev_idle = prev_ticks.get(3).unwrap_or(&0);
+        let cur_idle = cur_ticks.get(3).unwrap_or(&0);
+
+        let total_delta = cur_total.saturating_sub(prev_total);
+        let idle_delta = cur_idle.saturating_sub(*prev_idle);
+
+        if total_delta == 0 {
+            return 0.0;
+        }
+        ((total_delta - idle_delta) as f64 / total_delta as f64) * 100.0
+    };
+
+    let total_usage = calc(&prev.total, &cur.total);
+    let core_usages: Vec<f64> = prev.cores.iter().zip(cur.cores.iter())
+        .map(|(p, c)| calc(p, c))
+        .collect();
+
+    (total_usage, core_usages)
 }
 
 /// 解析 /proc/meminfo
-fn parse_memory_info(output: &str) -> Result<(u64, u64, f64)> {
+pub fn parse_memory_info(output: &str) -> Result<(u64, u64, f64)> {
     let mut mem_total: u64 = 0;
     let mut mem_available: u64 = 0;
     let mut mem_free: u64 = 0;
@@ -140,7 +171,7 @@ fn parse_memory_info(output: &str) -> Result<(u64, u64, f64)> {
 }
 
 /// 解析 /proc/net/dev（网络接口流量）
-fn parse_network_stats(output: &str) -> Result<(u64, u64)> {
+pub fn parse_network_stats(output: &str) -> Result<(u64, u64)> {
     let mut total_rx: u64 = 0;
     let mut total_tx: u64 = 0;
 

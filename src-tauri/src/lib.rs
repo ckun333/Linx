@@ -14,12 +14,11 @@ use commands::AppState;
 
 /// 初始化数据库并返回 AppState
 fn init_state() -> Result<AppState> {
-    // 数据库文件放在 Tauri 的 app data 目录
-    // 开发阶段使用相对路径方便调试
     let db_path = if cfg!(debug_assertions) {
-        // 开发模式：放在项目根目录
+        // 开发模式：放在项目根目录（不在 src-tauri 内，避免 watcher 触发重建）
         let mut path = std::env::current_dir()
             .unwrap_or_else(|_| std::path::PathBuf::from("."));
+        path.pop(); // src-tauri/ → 项目根目录
         path.push("linx_dev.db");
         path.to_string_lossy().to_string()
     } else {
@@ -41,6 +40,9 @@ fn init_state() -> Result<AppState> {
         db: Mutex::new(database),
         connections: Mutex::new(HashMap::new()),
         shells: Mutex::new(HashMap::new()),
+        prev_cpu_stats: Mutex::new(HashMap::new()),
+        server_creds: Mutex::new(HashMap::new()),
+        monitor_connections: Mutex::new(HashMap::new()),
     })
 }
 

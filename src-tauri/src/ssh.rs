@@ -12,6 +12,7 @@ use crate::models::AuthType;
 
 /// 管理一个 SSH 连接
 pub struct SshConnection {
+    #[allow(dead_code)]
     pub server_id: i64,
     pub session: Mutex<Session>,
 }
@@ -119,6 +120,7 @@ impl SshConnection {
     }
 
     /// 检查连接是否仍然有效
+    #[allow(dead_code)]
     pub fn is_connected(&self) -> bool {
         if let Ok(session) = self.session.lock() {
             session.authenticated()
@@ -176,6 +178,7 @@ impl SshConnection {
 /// 建立独立的 SSH 连接，通过 PTY 实现交互式终端。
 /// 读线程持续从 SSH channel 读取输出并通过 mpsc 通道发送。
 pub struct InteractiveShell {
+    #[allow(dead_code)]
     pub server_id: i64,
     session: Session,
     channel: Arc<Mutex<Channel>>,
