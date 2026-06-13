@@ -23,7 +23,7 @@ pub(crate) struct ServerCredentials {
 pub struct AppState {
     pub db: Mutex<Database>,
     pub connections: Mutex<HashMap<i64, Arc<SshConnection>>>,
-    pub shells: Mutex<HashMap<i64, InteractiveShell>>,
+    pub shells: Mutex<HashMap<String, InteractiveShell>>,
     pub prev_cpu_stats: Mutex<HashMap<i64, CpuTickSnapshot>>,
     pub server_creds: Mutex<HashMap<i64, ServerCredentials>>,
     pub monitor_connections: Mutex<HashMap<i64, Arc<SshConnection>>>,
@@ -176,34 +176,41 @@ pub async fn connect_ssh(
 }
 
 #[tauri::command(rename_all = "camelCase")]
-pub async fn disconnect_ssh(state: State<'_, AppState>, server_id: i64) -> Result<String, String> {
-    let old_conn = {
-        let mut connections = state.connections.lock().map_err(|e| e.to_string())?;
-        connections.remove(&server_id)
-    };
-    if let Some(conn) = old_conn {
-        tokio::task::spawn_blocking(move || { conn.disconnect().ok(); }).await.ok();
-    }
-
+pub async fn disconnect_ssh(state: State<'_, AppState>, session_id: String, server_id: i64) -> Result<String, String> {
     let old_shell = {
         let mut shells = state.shells.lock().map_err(|e| e.to_string())?;
-        shells.remove(&server_id)
+        shells.remove(&session_id)
     };
     if let Some(mut shell) = old_shell {
         tokio::task::spawn_blocking(move || { shell.close().ok(); }).await.ok();
     }
 
-    {
-        let mut stats = state.prev_cpu_stats.lock().map_err(|e| e.to_string())?;
-        stats.remove(&server_id);
-    }
-    {
-        let mut conns = state.monitor_connections.lock().map_err(|e| e.to_string())?;
-        conns.remove(&server_id);
-    }
-    {
-        let mut creds = state.server_creds.lock().map_err(|e| e.to_string())?;
-        creds.remove(&server_id);
+    let has_other_sessions = {
+        let shells = state.shells.lock().map_err(|e| e.to_string())?;
+        shells.values().any(|s| s.server_id == server_id)
+    };
+
+    if !has_other_sessions {
+        let old_conn = {
+            let mut connections = state.connections.lock().map_err(|e| e.to_string())?;
+            connections.remove(&server_id)
+        };
+        if let Some(conn) = old_conn {
+            tokio::task::spawn_blocking(move || { conn.disconnect().ok(); }).await.ok();
+        }
+
+        {
+            let mut stats = state.prev_cpu_stats.lock().map_err(|e| e.to_string())?;
+            stats.remove(&server_id);
+        }
+        {
+            let mut conns = state.monitor_connections.lock().map_err(|e| e.to_string())?;
+            conns.remove(&server_id);
+        }
+        {
+            let mut creds = state.server_creds.lock().map_err(|e| e.to_string())?;
+            creds.remove(&server_id);
+        }
     }
 
     Ok("已断开连接".to_string())
@@ -228,6 +235,7 @@ pub async fn exec_ssh(state: State<'_, AppState>, server_id: i64, command: Strin
 
 #[derive(Clone, serde::Serialize)]
 struct TerminalOutputPayload {
+    session_id: String,
     server_id: i64,
     data: String,
 }
@@ -236,11 +244,12 @@ struct TerminalOutputPayload {
 pub async fn start_shell(
     app: AppHandle,
     state: State<'_, AppState>,
+    session_id: String,
     server_id: i64,
 ) -> Result<String, String> {
     let old_shell = {
         let mut shells = state.shells.lock().map_err(|e| e.to_string())?;
-        shells.remove(&server_id)
+        shells.remove(&session_id)
     };
     if let Some(mut old) = old_shell {
         tokio::task::spawn_blocking(move || { old.close().ok(); }).await.ok();
@@ -282,18 +291,23 @@ pub async fn start_shell(
     let output_rx = shell.take_output_rx();
     {
         let mut shells = state.shells.lock().map_err(|e| e.to_string())?;
-        shells.insert(server_id, shell);
+        shells.insert(session_id.clone(), shell);
     }
 
     let app_clone = app.clone();
+    let session_id_clone = session_id.clone();
     thread::Builder::new()
-        .name(format!("shell-event-{}", server_id))
+        .name(format!("shell-event-{}", session_id))
         .spawn(move || {
             loop {
                 match output_rx.recv() {
                     Ok(data) => {
                         if let Ok(text) = String::from_utf8(data) {
-                            let _ = app_clone.emit("terminal-output", TerminalOutputPayload { server_id, data: text });
+                            let _ = app_clone.emit("terminal-output", TerminalOutputPayload {
+                                session_id: session_id_clone.clone(),
+                                server_id,
+                                data: text,
+                            });
                         }
                     }
                     Err(_) => break,
@@ -306,17 +320,17 @@ pub async fn start_shell(
 }
 
 #[tauri::command(rename_all = "camelCase")]
-pub fn write_ssh(state: State<'_, AppState>, server_id: i64, data: String) -> Result<(), String> {
+pub fn write_ssh(state: State<'_, AppState>, session_id: String, data: String) -> Result<(), String> {
     let shells = state.shells.lock().map_err(|e| e.to_string())?;
-    let shell = shells.get(&server_id)
+    let shell = shells.get(&session_id)
         .ok_or_else(|| "未找到活跃 shell 会话".to_string())?;
     shell.write_stdin(data.as_bytes()).map_err(|e| e.to_string())
 }
 
 #[tauri::command(rename_all = "camelCase")]
-pub fn resize_ssh(state: State<'_, AppState>, server_id: i64, cols: u32, rows: u32) -> Result<(), String> {
+pub fn resize_ssh(state: State<'_, AppState>, session_id: String, cols: u32, rows: u32) -> Result<(), String> {
     let shells = state.shells.lock().map_err(|e| e.to_string())?;
-    let shell = shells.get(&server_id)
+    let shell = shells.get(&session_id)
         .ok_or_else(|| "未找到活跃 shell 会话".to_string())?;
     shell.resize_pty(cols, rows).map_err(|e| e.to_string())
 }

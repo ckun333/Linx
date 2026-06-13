@@ -5,7 +5,8 @@ import GroupDialog from './components/GroupDialog';
 import Terminal from './components/Terminal';
 import MonitorPanel from './components/MonitorPanel';
 import TabBar from './components/TabBar';
-import { deleteGroup } from './hooks/useTauri';
+import ReconnectDialog from './components/ReconnectDialog';
+import { deleteGroup, disconnectSsh } from './hooks/useTauri';
 import type { TabData } from './types';
 
 type DialogType = 'closed' | 'addServer' | 'editServer' | 'addGroup' | 'renameGroup';
@@ -30,13 +31,21 @@ function App() {
   const [shouldAutoConnectTabId, setShouldAutoConnectTabId] = useState<string | null>(null);
   const tabsRef = useRef(tabs);
   tabsRef.current = tabs;
+  const connectedTabIdsRef = useRef(connectedTabIds);
+  connectedTabIdsRef.current = connectedTabIds;
+  const [reconnectTarget, setReconnectTarget] = useState<{
+    serverId: number;
+    serverName: string;
+    existingTabId: string;
+  } | null>(null);
+  const [terminalKeys, setTerminalKeys] = useState<Record<string, number>>({});
 
   const activeTab = tabs.find(t => t.id === activeTabId) ?? null;
 
   // 打开/切换到指定服务器的标签页
-  const openTab = useCallback((serverId: number, serverName: string, autoConnect: boolean) => {
+  const openTab = useCallback((serverId: number, serverName: string, autoConnect: boolean, forceNew?: boolean) => {
     const existing = tabsRef.current.find(t => t.serverId === serverId);
-    if (existing) {
+    if (existing && !forceNew) {
       setActiveTabId(existing.id);
       if (autoConnect) {
         setShouldAutoConnectTabId(existing.id);
@@ -58,8 +67,55 @@ function App() {
   }, [openTab]);
 
   const handleDoubleClickServer = useCallback((serverId: number, serverName: string) => {
+    const existing = tabsRef.current.find(t => t.serverId === serverId);
+    if (existing && connectedTabIdsRef.current.has(existing.id)) {
+      setReconnectTarget({ serverId, serverName, existingTabId: existing.id });
+      return;
+    }
     openTab(serverId, serverName, true);
   }, [openTab]);
+
+  const handleOpenNewTab = useCallback(() => {
+    if (!reconnectTarget) return;
+    openTab(reconnectTarget.serverId, reconnectTarget.serverName, true, true);
+    setReconnectTarget(null);
+  }, [reconnectTarget, openTab]);
+
+  const handleReconnect = useCallback(async () => {
+    if (!reconnectTarget) return;
+    const { serverId, existingTabId } = reconnectTarget;
+    setReconnectTarget(null);
+
+    try {
+      await disconnectSsh(existingTabId, serverId);
+    } catch (err) {
+      console.error('断开连接失败:', err);
+    }
+
+    setConnectedTabIds(prev => {
+      const next = new Set(prev);
+      next.delete(existingTabId);
+      return next;
+    });
+    setShouldAutoConnectTabId(null);
+
+    setTerminalKeys(prev => ({
+      ...prev,
+      [existingTabId]: (prev[existingTabId] || 0) + 1,
+    }));
+
+    setActiveTabId(existingTabId);
+    setTimeout(() => {
+      setShouldAutoConnectTabId(existingTabId);
+    }, 0);
+  }, [reconnectTarget]);
+
+  const handleCancelReconnect = useCallback(() => {
+    if (!reconnectTarget) return;
+    setActiveTabId(reconnectTarget.existingTabId);
+    setShouldAutoConnectTabId(null);
+    setReconnectTarget(null);
+  }, [reconnectTarget]);
 
   // 标签页操作
   const handleSelectTab = useCallback((tabId: string) => {
@@ -79,25 +135,27 @@ function App() {
       return next;
     });
     setShouldAutoConnectTabId(prev => prev === tabId ? null : prev);
+    setTerminalKeys(prev => {
+      const next = { ...prev };
+      delete next[tabId];
+      return next;
+    });
+    if (reconnectTarget?.existingTabId === tabId) {
+      setReconnectTarget(null);
+    }
+  }, [reconnectTarget]);
+
+  const handleTerminalConnected = useCallback((tabId: string, _serverId: number) => {
+    setConnectedTabIds(prev => new Set(prev).add(tabId));
+    setShouldAutoConnectTabId(prev => prev === tabId ? null : prev);
   }, []);
 
-  const handleTerminalConnected = useCallback((serverId: number) => {
-    const tab = tabsRef.current.find(t => t.serverId === serverId);
-    if (tab) {
-      setConnectedTabIds(prev => new Set(prev).add(tab.id));
-      setShouldAutoConnectTabId(prev => prev === tab.id ? null : prev);
-    }
-  }, []);
-
-  const handleTerminalDisconnected = useCallback((serverId: number) => {
-    const tab = tabsRef.current.find(t => t.serverId === serverId);
-    if (tab) {
-      setConnectedTabIds(prev => {
-        const next = new Set(prev);
-        next.delete(tab.id);
-        return next;
-      });
-    }
+  const handleTerminalDisconnected = useCallback((tabId: string, _serverId: number) => {
+    setConnectedTabIds(prev => {
+      const next = new Set(prev);
+      next.delete(tabId);
+      return next;
+    });
   }, []);
 
   // 对话框状态管理
@@ -187,19 +245,25 @@ function App() {
             <p>从左侧选择一个服务器开始连接</p>
           </div>
         ) : (
-          tabs.map((tab) => (
-            <div
-              key={tab.id}
-              className={`terminal-pane ${tab.id === activeTabId ? 'active' : 'inactive'}`}
-            >
-              <Terminal
-                serverId={tab.serverId}
-                shouldAutoConnect={tab.id === shouldAutoConnectTabId}
-                onConnected={handleTerminalConnected}
-                onDisconnected={handleTerminalDisconnected}
-              />
-            </div>
-          ))
+          tabs.map((tab) => {
+            const termKey = `${tab.id}-v${terminalKeys[tab.id] ?? 0}`;
+            return (
+              <div
+                key={tab.id}
+                className={`terminal-pane ${tab.id === activeTabId ? 'active' : 'inactive'}`}
+              >
+                <Terminal
+                  key={termKey}
+                  tabId={tab.id}
+                  serverId={tab.serverId}
+                  shouldAutoConnect={tab.id === shouldAutoConnectTabId}
+                  isActive={tab.id === activeTabId}
+                  onConnected={handleTerminalConnected}
+                  onDisconnected={handleTerminalDisconnected}
+                />
+              </div>
+            );
+          })
         )}
       </div>
 
@@ -238,6 +302,15 @@ function App() {
         onClose={closeDialog}
         onSaved={handleRefreshServerList}
         onDeleted={handleRefreshServerList}
+      />
+
+      {/* 重连对话框 */}
+      <ReconnectDialog
+        open={reconnectTarget !== null}
+        serverName={reconnectTarget?.serverName ?? ''}
+        onOpenNewTab={handleOpenNewTab}
+        onReconnect={handleReconnect}
+        onCancel={handleCancelReconnect}
       />
     </div>
   );

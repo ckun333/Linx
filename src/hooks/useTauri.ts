@@ -125,24 +125,24 @@ export async function connectSsh(serverId: number): Promise<string> {
   return invoke<string>('connect_ssh', { serverId });
 }
 
-export async function disconnectSsh(serverId: number): Promise<string> {
-  return invoke<string>('disconnect_ssh', { serverId });
+export async function disconnectSsh(sessionId: string, serverId: number): Promise<string> {
+  return invoke<string>('disconnect_ssh', { sessionId, serverId });
 }
 
 export async function execSsh(serverId: number, command: string): Promise<string> {
   return invoke<string>('exec_ssh', { serverId, command });
 }
 
-export async function startShell(serverId: number): Promise<string> {
-  return invoke<string>('start_shell', { serverId });
+export async function startShell(sessionId: string, serverId: number): Promise<string> {
+  return invoke<string>('start_shell', { sessionId, serverId });
 }
 
-export async function writeSsh(serverId: number, data: string): Promise<void> {
-  return invoke<void>('write_ssh', { serverId, data });
+export async function writeSsh(sessionId: string, data: string): Promise<void> {
+  return invoke<void>('write_ssh', { sessionId, data });
 }
 
-export async function resizeSsh(serverId: number, cols: number, rows: number): Promise<void> {
-  return invoke<void>('resize_ssh', { serverId, cols, rows });
+export async function resizeSsh(sessionId: string, cols: number, rows: number): Promise<void> {
+  return invoke<void>('resize_ssh', { sessionId, cols, rows });
 }
 
 // ==================== SFTP API ====================
