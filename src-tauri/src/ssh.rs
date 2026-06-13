@@ -1,4 +1,4 @@
-use std::io::{Read, Write};
+use std::io::Read;
 use std::net::TcpStream;
 use std::path::Path;
 use std::sync::mpsc::{self, Receiver, Sender};
@@ -266,6 +266,9 @@ impl InteractiveShell {
             .name(format!("ssh-read-{}", server_id))
             .spawn(move || {
                 let mut buf = vec![0u8; 8192];
+                let mut consecutive_errors = 0;
+                const MAX_CONSECUTIVE_ERRORS: u32 = 5;
+
                 loop {
                     if *read_stop.lock().unwrap() {
                         break;
@@ -275,20 +278,31 @@ impl InteractiveShell {
                     match ch.read(&mut buf) {
                         Ok(0) => break, // EOF
                         Ok(n) => {
+                            consecutive_errors = 0;
                             let data = buf[..n].to_vec();
                             if output_tx.send(data).is_err() {
                                 break; // 接收端已关闭
                             }
                         }
                         Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
-                            // 非阻塞模式下无数据可读，短暂休眠后重试
                             drop(ch);
                             thread::sleep(std::time::Duration::from_millis(10));
                             continue;
                         }
+                        Err(ref e) if e.kind() == std::io::ErrorKind::Interrupted => {
+                            drop(ch);
+                            thread::sleep(std::time::Duration::from_millis(1));
+                            continue;
+                        }
                         Err(_) => {
-                            // 读取错误，退出循环
-                            break;
+                            drop(ch);
+                            consecutive_errors += 1;
+                            if consecutive_errors >= MAX_CONSECUTIVE_ERRORS {
+                                break;
+                            }
+                            let delay = 10 * 2u64.pow(consecutive_errors.min(3));
+                            thread::sleep(std::time::Duration::from_millis(delay));
+                            continue;
                         }
                     }
                 }
@@ -301,6 +315,7 @@ impl InteractiveShell {
         let _write_handle = thread::Builder::new()
             .name(format!("ssh-write-{}", server_id))
             .spawn(move || {
+                use std::io::Write;
                 loop {
                     if *write_stop.lock().unwrap() {
                         break;
@@ -308,9 +323,32 @@ impl InteractiveShell {
 
                     match stdin_rx.recv_timeout(std::time::Duration::from_millis(100)) {
                         Ok(data) => {
-                            let mut ch = write_channel.lock().unwrap();
-                            let _ = ch.write_all(&data);
-                            let _ = ch.flush();
+                            let mut retry_count = 0;
+                            const MAX_RETRIES: u32 = 10;
+                            const BASE_DELAY_MS: u64 = 5;
+
+                            loop {
+                                let mut ch = write_channel.lock().unwrap();
+                                match ch.write_all(&data) {
+                                    Ok(()) => {
+                                        let _ = ch.flush();
+                                        break;
+                                    }
+                                    Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                                        drop(ch);
+                                        retry_count += 1;
+                                        if retry_count >= MAX_RETRIES {
+                                            break;
+                                        }
+                                        let delay = BASE_DELAY_MS * 2u64.pow(retry_count.min(4));
+                                        thread::sleep(std::time::Duration::from_millis(delay));
+                                        continue;
+                                    }
+                                    Err(_) => {
+                                        break;
+                                    }
+                                }
+                            }
                         }
                         Err(mpsc::RecvTimeoutError::Disconnected) => break,
                         Err(mpsc::RecvTimeoutError::Timeout) => continue,

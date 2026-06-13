@@ -9,9 +9,11 @@ import 'xterm/css/xterm.css';
 
 interface TerminalProps {
   serverId: number;
+  tabId: string;
   shouldAutoConnect?: boolean;
-  onConnected?: (serverId: number) => void;
-  onDisconnected?: (serverId: number) => void;
+  isActive?: boolean;
+  onConnected?: (tabId: string, serverId: number) => void;
+  onDisconnected?: (tabId: string, serverId: number) => void;
 }
 
 /**
@@ -21,16 +23,19 @@ interface TerminalProps {
  * 使用 start_shell / write_ssh / resize_ssh 实现双向 PTY 交互
  * 通过 terminal-output 事件接收后端输出
  */
-function Terminal({ serverId, shouldAutoConnect, onConnected, onDisconnected }: TerminalProps) {
+function Terminal({ serverId, tabId, shouldAutoConnect, isActive, onConnected, onDisconnected }: TerminalProps) {
   const terminalRef = useRef<HTMLDivElement>(null);
   const xtermRef = useRef<XtermTerminal | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
   const unlistenRef = useRef<UnlistenFn | null>(null);
   const connectedRef = useRef(false);
+  const connectingRef = useRef(false);
   const [connected, setConnected] = useState(false);
   const [connecting, setConnecting] = useState(false);
   const [connectionError, setConnectionError] = useState<string | null>(null);
   const [serverName, setServerName] = useState<string>('');
+  const inputBufferRef = useRef<string>('');
+  const inputTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     getServers().then((servers) => {
@@ -83,21 +88,36 @@ function Terminal({ serverId, shouldAutoConnect, onConnected, onDisconnected }: 
 
     term.open(terminalRef.current);
 
-    setTimeout(() => fitAddon.fit(), 50);
+    setTimeout(() => {
+      fitAddon.fit();
+      if (isActive) term.focus();
+    }, 50);
 
     const handleResize = () => fitAddon.fit();
     window.addEventListener('resize', handleResize);
 
     const termRef = xtermRef;
+    const batchTimeout = 16;
     term.onData((data) => {
-      writeSsh(serverId, data).catch((err) => {
-        termRef.current?.writeln(`\x1b[31m写入失败: ${err}\x1b[0m`);
-      });
+      inputBufferRef.current += data;
+      if (inputTimerRef.current) {
+        clearTimeout(inputTimerRef.current);
+      }
+      inputTimerRef.current = setTimeout(() => {
+        const buffered = inputBufferRef.current;
+        inputBufferRef.current = '';
+        inputTimerRef.current = null;
+        if (buffered.length > 0) {
+          writeSsh(tabId, buffered).catch((err) => {
+            termRef.current?.writeln(`\x1b[31m写入失败: ${err}\x1b[0m`);
+          });
+        }
+      }, batchTimeout);
     });
 
     term.onResize(({ cols, rows }) => {
       if (connectedRef.current) {
-        resizeSsh(serverId, cols, rows).catch((err) => {
+        resizeSsh(tabId, cols, rows).catch((err) => {
           console.error('resize_ssh 失败:', err);
         });
       }
@@ -107,26 +127,43 @@ function Terminal({ serverId, shouldAutoConnect, onConnected, onDisconnected }: 
 
     return () => {
       window.removeEventListener('resize', handleResize);
+      if (inputTimerRef.current) {
+        clearTimeout(inputTimerRef.current);
+      }
       term.dispose();
       xtermRef.current = null;
       fitAddonRef.current = null;
     };
-  }, [serverId]);
+  }, [serverId, tabId]);
+
+  // 当标签页变为活跃时，聚焦到终端
+  useEffect(() => {
+    if (isActive && xtermRef.current) {
+      // 延迟聚焦，等待 CSS 切换完成
+      setTimeout(() => {
+        xtermRef.current?.focus();
+      }, 50);
+    }
+  }, [isActive]);
 
   const handleConnect = useCallback(async () => {
-    if (connected || connecting) return;
+    if (connectedRef.current || connectingRef.current) return;
     setConnecting(true);
+    connectingRef.current = true;
     setConnectionError(null);
     const fitAddon = fitAddonRef.current;
 
     xtermRef.current?.writeln(`\x1b[32m正在连接到服务器...\x1b[0m`);
     try {
-      const result = await startShell(serverId);
+      const result = await startShell(tabId, serverId);
       xtermRef.current?.writeln(`\x1b[32m${result}\x1b[0m`);
 
-      const unlisten = await listen('terminal-output', (event: { payload: { server_id: number; data: string } }) => {
-        if (event.payload.server_id === serverId) {
-          // 使用 xtermRef.current 确保写入当前的 xterm 实例
+      if (unlistenRef.current) {
+        unlistenRef.current();
+        unlistenRef.current = null;
+      }
+      const unlisten = await listen('terminal-output', (event: { payload: { session_id: string; server_id: number; data: string } }) => {
+        if (event.payload.session_id === tabId) {
           xtermRef.current?.write(event.payload.data);
         }
       });
@@ -136,20 +173,21 @@ function Terminal({ serverId, shouldAutoConnect, onConnected, onDisconnected }: 
         fitAddon.fit();
         const cols = xtermRef.current?.cols ?? 80;
         const rows = xtermRef.current?.rows ?? 30;
-        await resizeSsh(serverId, cols, rows);
+        await resizeSsh(tabId, cols, rows);
       }
 
       setConnected(true);
       connectedRef.current = true;
-      onConnected?.(serverId);
+      onConnected?.(tabId, serverId);
     } catch (err) {
       const msg = String(err);
       xtermRef.current?.writeln(`\x1b[31m连接失败: ${msg}\x1b[0m`);
       setConnectionError(msg);
     } finally {
+      connectingRef.current = false;
       setConnecting(false);
     }
-  }, [serverId, onConnected]);
+  }, [serverId, tabId, onConnected]);
 
   // shouldAutoConnect 为 true 时自动连接
   useEffect(() => {
@@ -167,15 +205,15 @@ function Terminal({ serverId, shouldAutoConnect, onConnected, onDisconnected }: 
     }
 
     try {
-      await disconnectSsh(serverId);
+      await disconnectSsh(tabId, serverId);
       term?.writeln(`\x1b[33m连接已断开\x1b[0m`);
       setConnected(false);
       connectedRef.current = false;
-      onDisconnected?.(serverId);
+      onDisconnected?.(tabId, serverId);
     } catch (err) {
       term?.writeln(`\x1b[31m断开失败: ${err}\x1b[0m`);
     }
-  }, [serverId, onDisconnected]);
+  }, [tabId, serverId, onDisconnected]);
 
   return (
     <div className="terminal-container">
