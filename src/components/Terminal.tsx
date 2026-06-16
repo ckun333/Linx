@@ -3,6 +3,8 @@ import { Terminal as XtermTerminal } from 'xterm';
 import { FitAddon } from 'xterm-addon-fit';
 import { WebLinksAddon } from 'xterm-addon-web-links';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
+import { Plug, Unplug } from 'lucide-react';
+import { Button } from './ui/button';
 import { startShell, writeSsh, resizeSsh, disconnectSsh, getServers } from '../hooks/useTauri';
 
 import 'xterm/css/xterm.css';
@@ -16,13 +18,6 @@ interface TerminalProps {
   onDisconnected?: (tabId: string, serverId: number) => void;
 }
 
-/**
- * SSH 终端组件（交互式 PTY 模式）
- *
- * 基于 xterm.js + FitAddon + WebLinksAddon，通过 Tauri 后端 SSH 连接
- * 使用 start_shell / write_ssh / resize_ssh 实现双向 PTY 交互
- * 通过 terminal-output 事件接收后端输出
- */
 function Terminal({ serverId, tabId, shouldAutoConnect, isActive, onConnected, onDisconnected }: TerminalProps) {
   const terminalRef = useRef<HTMLDivElement>(null);
   const xtermRef = useRef<XtermTerminal | null>(null);
@@ -46,7 +41,6 @@ function Terminal({ serverId, tabId, shouldAutoConnect, isActive, onConnected, o
     });
   }, [serverId]);
 
-  // 初始化 xterm.js
   useEffect(() => {
     if (!terminalRef.current) return;
 
@@ -136,10 +130,8 @@ function Terminal({ serverId, tabId, shouldAutoConnect, isActive, onConnected, o
     };
   }, [serverId, tabId]);
 
-  // 当标签页变为活跃时，聚焦到终端
   useEffect(() => {
     if (isActive && xtermRef.current) {
-      // 延迟聚焦，等待 CSS 切换完成
       setTimeout(() => {
         xtermRef.current?.focus();
       }, 50);
@@ -189,7 +181,6 @@ function Terminal({ serverId, tabId, shouldAutoConnect, isActive, onConnected, o
     }
   }, [serverId, tabId, onConnected]);
 
-  // shouldAutoConnect 为 true 时自动连接
   useEffect(() => {
     if (shouldAutoConnect) {
       handleConnect();
@@ -216,30 +207,32 @@ function Terminal({ serverId, tabId, shouldAutoConnect, isActive, onConnected, o
   }, [tabId, serverId, onDisconnected]);
 
   return (
-    <div className="terminal-container">
-      <div className="terminal-toolbar">
-        <span className="terminal-title">{serverName || `服务器 #${serverId}`}</span>
-        <div className="terminal-actions">
+    <div className="flex flex-col h-full">
+      <div className="flex items-center justify-between px-3 py-2 border-b border-border bg-secondary">
+        <span className="text-sm font-medium">{serverName || `服务器 #${serverId}`}</span>
+        <div className="flex gap-2">
           {!connected ? (
-            <button
-              className="btn btn-primary"
+            <Button
+              size="sm"
               onClick={handleConnect}
               disabled={connecting}
             >
+              <Plug className="w-4 h-4 mr-1" />
               {connecting ? '连接中...' : '连接'}
-            </button>
+            </Button>
           ) : (
-            <button className="btn btn-danger" onClick={handleDisconnect}>
+            <Button size="sm" variant="destructive" onClick={handleDisconnect}>
+              <Unplug className="w-4 h-4 mr-1" />
               断开
-            </button>
+            </Button>
           )}
         </div>
       </div>
 
-      <div className="terminal-wrapper" ref={terminalRef} />
+      <div className="flex-1 relative" ref={terminalRef} />
 
       {connectionError && (
-        <div className="terminal-error">
+        <div className="px-3 py-2 text-sm text-destructive bg-destructive/10 border-t border-destructive/20">
           {connectionError}
         </div>
       )}

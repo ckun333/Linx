@@ -1,4 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { Cpu, HardDrive, Wifi, Activity, Server } from 'lucide-react';
+import { Badge } from './ui/badge';
 import { ServerStatus } from '../types';
 import { getServerStatus } from '../hooks/useTauri';
 import { useToast } from '../contexts/ToastContext';
@@ -9,18 +11,6 @@ interface MonitorPanelProps {
   connectedServerId?: number | null;
 }
 
-/**
- * 监控面板组件（右侧）
- *
- * 显示选中服务器的实时状态：
- * - CPU 使用率
- * - 内存使用情况
- * - 网络流量
- * - 磁盘使用率
- *
- * Phase 1: 基础数据展示
- * Phase 2: 图表可视化
- */
 function MonitorPanel({ serverId, refreshKey, connectedServerId }: MonitorPanelProps) {
   const [status, setStatus] = useState<ServerStatus | null>(null);
   const [loading, setLoading] = useState(false);
@@ -40,7 +30,6 @@ function MonitorPanel({ serverId, refreshKey, connectedServerId }: MonitorPanelP
     return () => clearInterval(timer);
   }, []);
 
-  // 监控错误时弹出提示
   useEffect(() => {
     if (error && error !== prevErrorRef.current) {
       showToast(`监控异常: ${error}`, 'error');
@@ -76,7 +65,6 @@ function MonitorPanel({ serverId, refreshKey, connectedServerId }: MonitorPanelP
     }
   }, [serverId]);
 
-  // 当 serverId 变化时启动/停止轮询
   useEffect(() => {
     if (serverId === null || serverId !== connectedServerId) {
       setStatus(null);
@@ -88,17 +76,13 @@ function MonitorPanel({ serverId, refreshKey, connectedServerId }: MonitorPanelP
       return;
     }
 
-    // 重置网络速率缓存（新服务器或刷新）
     prevNetworkRx.current = null;
     prevNetworkTx.current = null;
     prevNetworkTime.current = null;
     setNetworkRxSpeed(null);
     setNetworkTxSpeed(null);
 
-    // 立即获取一次
     fetchStatus();
-
-    // 每 3 秒轮询
     pollingRef.current = setInterval(fetchStatus, 3000);
 
     return () => {
@@ -124,111 +108,134 @@ function MonitorPanel({ serverId, refreshKey, connectedServerId }: MonitorPanelP
     return `${(bytesPerSec / Math.pow(1024, i)).toFixed(1)} ${units[i]}`;
   };
 
+  const getBarColor = (percent: number) => {
+    if (percent > 80) return 'bg-red-500';
+    if (percent > 50) return 'bg-yellow-500';
+    return 'bg-green-500';
+  };
+
   if (serverId === null || serverId !== connectedServerId) {
     return (
-      <div className="monitor-panel">
-        <div className="monitor-header">
-          <h3>监控</h3>
+      <div className="flex flex-col h-full">
+        <div className="flex items-center justify-between px-3 py-2 border-b border-border">
+          <h3 className="text-sm font-medium">监控</h3>
         </div>
-        <div className="monitor-empty">
-          <p>选择服务器查看状态</p>
+        <div className="flex-1 flex items-center justify-center text-sm text-muted-foreground">
+          选择服务器查看状态
         </div>
       </div>
     );
   }
 
   return (
-    <div className="monitor-panel">
-      <div className="monitor-header">
-        <h3>监控</h3>
-        <span className="monitor-update-time">
+    <div className="flex flex-col h-full">
+      <div className="flex items-center justify-between px-3 py-2 border-b border-border">
+        <h3 className="text-sm font-medium">监控</h3>
+        <span className="text-xs text-muted-foreground">
           {currentTime.toLocaleTimeString('zh-CN')}
         </span>
       </div>
 
-      {error && (
-        <div className="monitor-error">
-          <p>{error}</p>
-        </div>
-      )}
-
-      {loading && !status && (
-        <div className="monitor-loading">获取中...</div>
-      )}
-
-      {status && (
-        <div className="monitor-content">
-          {/* 在线状态 */}
-          <div className="metric-card">
-            <div className="metric-label">状态</div>
-            <div className={`metric-value ${status.online ? 'online' : 'offline'}`}>
-              {status.online ? '在线' : '离线'}
-            </div>
+      <div className="flex-1 overflow-y-auto p-3 space-y-3">
+        {error && (
+          <div className="text-sm text-destructive bg-destructive/10 p-2 rounded">
+            {error}
           </div>
+        )}
 
-          {/* CPU */}
-          <div className="metric-card">
-            <div className="metric-label">CPU（总计 {status.cpu_usage.toFixed(1)}%）</div>
-            <div className="metric-bar" style={{ marginBottom: 8 }}>
-              <div
-                className={`metric-bar-fill ${status.cpu_usage > 80 ? 'danger' : status.cpu_usage > 50 ? 'warn' : 'normal'}`}
-                style={{ width: `${Math.min(status.cpu_usage, 100)}%` }}
-              />
-            </div>
-            {status.cpu_cores.map((usage, i) => (
-              <div key={i} style={{ marginBottom: 4 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: 'var(--text-muted)', marginBottom: 2 }}>
-                  <span>CPU {i}</span>
-                  <span>{usage.toFixed(1)}%</span>
-                </div>
-                <div className="metric-bar" style={{ height: 3 }}>
-                  <div
-                    className={`metric-bar-fill ${usage > 80 ? 'danger' : usage > 50 ? 'warn' : 'normal'}`}
-                    style={{ width: `${Math.min(usage, 100)}%` }}
-                  />
-                </div>
+        {loading && !status && (
+          <div className="text-sm text-muted-foreground text-center py-4">获取中...</div>
+        )}
+
+        {status && (
+          <>
+            {/* Status */}
+            <div className="p-3 rounded-lg border border-border bg-secondary/50">
+              <div className="flex items-center gap-2 text-sm text-muted-foreground mb-1">
+                <Server className="w-4 h-4" />
+                状态
               </div>
-            ))}
-          </div>
+              <Badge variant={status.online ? "default" : "destructive"}>
+                {status.online ? '在线' : '离线'}
+              </Badge>
+            </div>
 
-          {/* 内存 */}
-          <div className="metric-card">
-            <div className="metric-label">内存</div>
-            <div className="metric-value">
-              {formatBytes(status.memory_used)} / {formatBytes(status.memory_total)}
+            {/* CPU */}
+            <div className="p-3 rounded-lg border border-border bg-secondary/50">
+              <div className="flex items-center gap-2 text-sm text-muted-foreground mb-2">
+                <Cpu className="w-4 h-4" />
+                CPU（总计 {status.cpu_usage.toFixed(1)}%）
+              </div>
+              <div className="h-2 rounded-full bg-secondary overflow-hidden mb-2">
+                <div
+                  className={`h-full rounded-full transition-all ${getBarColor(status.cpu_usage)}`}
+                  style={{ width: `${Math.min(status.cpu_usage, 100)}%` }}
+                />
+              </div>
+              {status.cpu_cores.map((usage, i) => (
+                <div key={i} className="mb-1">
+                  <div className="flex justify-between text-[10px] text-muted-foreground mb-0.5">
+                    <span>CPU {i}</span>
+                    <span>{usage.toFixed(1)}%</span>
+                  </div>
+                  <div className="h-[3px] rounded-full bg-secondary overflow-hidden">
+                    <div
+                      className={`h-full rounded-full transition-all ${getBarColor(usage)}`}
+                      style={{ width: `${Math.min(usage, 100)}%` }}
+                    />
+                  </div>
+                </div>
+              ))}
             </div>
-            <div className="metric-bar">
-              <div
-                className={`metric-bar-fill ${status.memory_usage > 80 ? 'danger' : status.memory_usage > 50 ? 'warn' : 'normal'}`}
-                style={{ width: `${Math.min(status.memory_usage, 100)}%` }}
-              />
-            </div>
-          </div>
 
-          {/* 磁盘 */}
-          <div className="metric-card">
-            <div className="metric-label">磁盘</div>
-            <div className="metric-value">
-              {status.disk_usage.toFixed(1)}%
+            {/* Memory */}
+            <div className="p-3 rounded-lg border border-border bg-secondary/50">
+              <div className="flex items-center gap-2 text-sm text-muted-foreground mb-2">
+                <Activity className="w-4 h-4" />
+                内存
+              </div>
+              <div className="text-sm mb-2">
+                {formatBytes(status.memory_used)} / {formatBytes(status.memory_total)}
+              </div>
+              <div className="h-2 rounded-full bg-secondary overflow-hidden">
+                <div
+                  className={`h-full rounded-full transition-all ${getBarColor(status.memory_usage)}`}
+                  style={{ width: `${Math.min(status.memory_usage, 100)}%` }}
+                />
+              </div>
             </div>
-            <div className="metric-bar">
-              <div
-                className={`metric-bar-fill ${status.disk_usage > 80 ? 'danger' : status.disk_usage > 50 ? 'warn' : 'normal'}`}
-                style={{ width: `${Math.min(status.disk_usage, 100)}%` }}
-              />
-            </div>
-          </div>
 
-          {/* 网络 */}
-          <div className="metric-card">
-            <div className="metric-label">网络</div>
-            <div className="metric-value network-row">
-              <span>↓ {networkRxSpeed !== null ? formatSpeed(networkRxSpeed) : '—'}</span>
-              <span>↑ {networkTxSpeed !== null ? formatSpeed(networkTxSpeed) : '—'}</span>
+            {/* Disk */}
+            <div className="p-3 rounded-lg border border-border bg-secondary/50">
+              <div className="flex items-center gap-2 text-sm text-muted-foreground mb-2">
+                <HardDrive className="w-4 h-4" />
+                磁盘
+              </div>
+              <div className="text-sm mb-2">
+                {status.disk_usage.toFixed(1)}%
+              </div>
+              <div className="h-2 rounded-full bg-secondary overflow-hidden">
+                <div
+                  className={`h-full rounded-full transition-all ${getBarColor(status.disk_usage)}`}
+                  style={{ width: `${Math.min(status.disk_usage, 100)}%` }}
+                />
+              </div>
             </div>
-          </div>
-        </div>
-      )}
+
+            {/* Network */}
+            <div className="p-3 rounded-lg border border-border bg-secondary/50">
+              <div className="flex items-center gap-2 text-sm text-muted-foreground mb-2">
+                <Wifi className="w-4 h-4" />
+                网络
+              </div>
+              <div className="flex justify-between text-sm">
+                <span>↓ {networkRxSpeed !== null ? formatSpeed(networkRxSpeed) : '—'}</span>
+                <span>↑ {networkTxSpeed !== null ? formatSpeed(networkTxSpeed) : '—'}</span>
+              </div>
+            </div>
+          </>
+        )}
+      </div>
     </div>
   );
 }
