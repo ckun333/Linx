@@ -197,7 +197,7 @@ function ServerDialog({ open, serverId, onClose, onSaved, onDeleted }: ServerDia
                 <Label htmlFor="group">分组</Label>
                 <select
                   id="group"
-                  className="flex h-9 w-full rounded-md border border-input bg-[#1a1b26] text-[#e0e6ff] px-3 py-1 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring [&>option]:bg-[#1a1b26] [&>option]:text-[#e0e6ff]"
+                  className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                   value={groupId ?? ''}
                   onChange={(e) => setGroupId(e.target.value ? Number(e.target.value) : null)}
                 >
