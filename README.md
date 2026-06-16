@@ -2,55 +2,86 @@
 
 小巧、便捷的 SSH 终端管理工具。快速管理服务器连接、查看节点状态。
 
+## 功能
 
-## 目标
-
-一个桌面应用，打开后：
-- 左侧：服务器列表（分类管理）+ 文件浏览器（可收起）
-- 中间：SSH 终端（主区域）
-- 右侧：服务器监控面板（CPU/内存/网络/磁盘，可收起）
+- 左侧：服务器列表（分组管理），支持在线/离线状态检测
+- 中间：SSH 终端（xterm.js），多标签页支持
+- 右侧：服务器监控面板（CPU/内存/网络/磁盘），实时刷新
+- 配置导入/导出，支持 JSON 格式
 
 ## 技术栈
 
 | 层级 | 选型 | 说明 |
 |------|------|------|
-| **桌面框架** | Tauri | 跨平台（Windows / Debian 系 Linux） |
-| **前端** | React + xterm.js | 分屏多终端支持 |
+| **桌面框架** | Tauri v2 | 跨平台（Windows / Linux） |
+| **前端** | React 18 + TypeScript | Vite 构建 |
+| **UI** | shadcn/ui + Tailwind CSS | 暗色主题，Tokyo Night 配色 |
+| **图标** | lucide-react | 统一图标库 |
+| **终端** | xterm.js | FitAddon + WebLinksAddon |
 | **SSH** | Rust ssh2 crate | 原生支持 SFTP 协议 |
-| **监控** | SSH 采集指标 + 图表 | Linux 走 /proc，Windows 走 Win32 API（条件编译） |
-| **配置** | SQLite (rusqlite) | 分类、标签、分组数据好查，JSON 用于导入/导出备份 |
+| **监控** | SSH 采集 /proc 指标 | Linux 远程服务器监控 |
+| **配置** | SQLite (rusqlite) | AES-GCM 加密存储密码 |
 
 ## 布局
 
 ```
 ┌──────────────┬─────────────────────┬─────────────┐
-│  左侧 (收起)  │      主区域          │  右侧 (收起)  │
+│  左侧 (可收起) │      主区域          │  右侧 (可收起) │
 │              │                     │              │
-│ ┌ 服务器列表 ┐│    终端 (xterm)     │  监控面板     │
-│ │ 分组A      ││  分屏/多 Tab 支持   │  CPU/内存    │
-│ │  ├ server ││                     │  网络/磁盘   │
-│ │  ├ server ││                     │              │
-│ │ 分组B      ││                     │              │
-│ │  └ ...    ││                     │              │
-│ └──────────┘│                     │              │
-│ ┌ 文件树 ───┐│                     │              │
-│ │ (SFTP)    ││                     │              │
-│ └──────────┘│                     │              │
+│  服务器列表    │    终端 (xterm)     │  监控面板     │
+│  ├ 分组A      │  多 Tab 支持        │  CPU/内存    │
+│  │  ├ server │                     │  网络/磁盘   │
+│  │  └ server │                     │              │
+│  └ 分组B      │                     │              │
 └──────────────┴─────────────────────┴─────────────┘
 ```
 
-### 左侧面板
+## 开发
 
-1. **服务器管理** — 分类管理（分组/标签）增删改 SSH 连接，显示在线/离线状态
-2. **文件浏览器** — SFTP 浏览远程目录树，后续支持上传/下载
+```bash
+# 安装依赖
+npm install
 
-### 未来规划
+# 前端开发（浏览器预览）
+npm run dev
+
+# 完整应用开发（Tauri 窗口）
+npm run tauri dev
+
+# 构建
+npm run build          # 前端构建
+npm run tauri build    # 生产构建（.deb / .msi）
+
+# Rust 测试
+cd src-tauri && cargo test
+```
+
+## 项目结构
+
+```
+src/                    # React 前端
+  components/           # UI 组件
+    ui/                 # shadcn/ui 组件（Button, Dialog, Input, Select 等）
+    Sidebar.tsx         # 左侧面板
+    Terminal.tsx        # SSH 终端
+    MonitorPanel.tsx    # 监控面板
+    ServerDialog.tsx    # 服务器编辑对话框
+  hooks/useTauri.ts     # Tauri invoke 封装（浏览器环境返回 mock 数据）
+  contexts/ToastContext.tsx
+  types.ts
+  App.tsx               # 三栏布局
+
+src-tauri/src/          # Rust 后端
+  commands.rs           # Tauri 命令处理
+  db.rs                 # SQLite CRUD
+  ssh.rs                # SSH 连接管理
+  monitor.rs            # 远程服务器监控
+  crypto.rs             # AES-GCM 加密
+```
+
+## 未来规划
 
 - [ ] 分屏多终端
 - [ ] SFTP 文件传输
 - [ ] 监控指标可定制
 - [ ] 服务器配置导入/导出
-
-## 状态
-
-计划中，待开发。
