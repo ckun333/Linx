@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { RefreshCw, Plus } from 'lucide-react';
 import ServerList from './ServerList';
 import { ServerGroup, Server } from '../types';
 import * as api from '../hooks/useTauri';
@@ -157,31 +158,41 @@ function Sidebar({
   );
 
   return (
-    <div className="sidebar">
-      <div className="sidebar-header">
-        <h2>服务器</h2>
-        <button className="icon-btn" onClick={loadData} title="刷新">
-          ↻
+    <div className="flex flex-col h-full">
+      <div className="flex items-center justify-between px-3 py-2 border-b border-border">
+        <h2 className="text-sm font-medium">服务器</h2>
+        <button
+          className="p-1 rounded hover:bg-accent text-muted-foreground hover:text-foreground"
+          onClick={loadData}
+          title="刷新"
+        >
+          <RefreshCw className="w-4 h-4" />
         </button>
       </div>
 
-      <div className="sidebar-toolbar">
-        <button className="toolbar-btn" onClick={onAddServer}>
-          <span className="toolbar-btn-icon">+</span>
+      <div className="flex gap-1 p-2 border-b border-border">
+        <button
+          className="flex items-center gap-1 px-2 py-1 text-xs rounded hover:bg-accent text-muted-foreground hover:text-foreground"
+          onClick={onAddServer}
+        >
+          <Plus className="w-3 h-3" />
           服务器
         </button>
-        <button className="toolbar-btn" onClick={onAddGroup}>
-          <span className="toolbar-btn-icon">+</span>
+        <button
+          className="flex items-center gap-1 px-2 py-1 text-xs rounded hover:bg-accent text-muted-foreground hover:text-foreground"
+          onClick={onAddGroup}
+        >
+          <Plus className="w-3 h-3" />
           分组
         </button>
       </div>
 
       {loading ? (
-        <div className="sidebar-loading">加载中...</div>
+        <div className="flex-1 flex items-center justify-center text-sm text-muted-foreground">加载中...</div>
       ) : error ? (
-        <div className="sidebar-error">
+        <div className="flex-1 flex flex-col items-center justify-center gap-2 text-sm text-muted-foreground">
           <p>加载失败</p>
-          <button onClick={loadData}>重试</button>
+          <button onClick={loadData} className="text-primary hover:underline">重试</button>
         </div>
       ) : (
         <ServerList
@@ -199,11 +210,17 @@ function Sidebar({
         />
       )}
 
-      <div className="sidebar-footer">
-        <button className="footer-btn" onClick={handleExport}>
+      <div className="flex gap-1 p-2 border-t border-border">
+        <button
+          className="flex-1 px-2 py-1 text-xs rounded hover:bg-accent text-muted-foreground hover:text-foreground"
+          onClick={handleExport}
+        >
           导出
         </button>
-        <button className="footer-btn" onClick={handleImport}>
+        <button
+          className="flex-1 px-2 py-1 text-xs rounded hover:bg-accent text-muted-foreground hover:text-foreground"
+          onClick={handleImport}
+        >
           导入
         </button>
       </div>

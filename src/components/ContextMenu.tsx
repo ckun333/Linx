@@ -1,4 +1,5 @@
 import { useEffect, useCallback } from 'react';
+import { Pencil, Trash2, Copy } from 'lucide-react';
 
 interface ContextMenuProps {
   x: number;
@@ -44,7 +45,6 @@ function ContextMenu({
     onClose();
   }, [serverUsername, serverHost, serverPort, onClose]);
 
-  // 点击外部关闭
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
       const target = e.target as HTMLElement;
@@ -57,7 +57,6 @@ function ContextMenu({
       if (e.key === 'Escape') onClose();
     };
 
-    // 延迟添加，避免触发当前右键事件
     const timer = setTimeout(() => {
       document.addEventListener('mousedown', handleClickOutside);
       document.addEventListener('keydown', handleEscape);
@@ -70,23 +69,34 @@ function ContextMenu({
     };
   }, [onClose]);
 
-  // 确保菜单不超出视口
   const adjustedX = Math.min(x, window.innerWidth - 200);
   const adjustedY = Math.min(y, window.innerHeight - 150);
 
   return (
     <div
-      className="context-menu"
+      className="context-menu fixed z-50 min-w-[160px] rounded-md border border-border bg-card p-1 shadow-md"
       style={{ left: adjustedX, top: adjustedY }}
     >
-      <div className="context-menu-item" onClick={handleEdit}>
+      <div
+        className="flex items-center gap-2 px-2 py-1.5 text-sm rounded-sm cursor-pointer hover:bg-accent"
+        onClick={handleEdit}
+      >
+        <Pencil className="w-4 h-4" />
         编辑
       </div>
-      <div className="context-menu-item danger" onClick={handleDelete}>
+      <div
+        className="flex items-center gap-2 px-2 py-1.5 text-sm rounded-sm cursor-pointer text-destructive hover:bg-destructive/10"
+        onClick={handleDelete}
+      >
+        <Trash2 className="w-4 h-4" />
         删除
       </div>
-      <div className="context-menu-separator" />
-      <div className="context-menu-item" onClick={handleCopyConnection}>
+      <div className="my-1 h-px bg-border" />
+      <div
+        className="flex items-center gap-2 px-2 py-1.5 text-sm rounded-sm cursor-pointer hover:bg-accent"
+        onClick={handleCopyConnection}
+      >
+        <Copy className="w-4 h-4" />
         复制连接信息
       </div>
     </div>

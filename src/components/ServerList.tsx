@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { Pencil, Trash2 } from 'lucide-react';
 import { ServerGroup, Server } from '../types';
 import ContextMenu from './ContextMenu';
 
@@ -38,11 +39,9 @@ function ServerList({
     serverUsername: string;
   } | null>(null);
 
-  // 按分组整理服务器列表
   const groupedServers = useMemo(() => {
     const grouped: { group: ServerGroup | null; servers: Server[] }[] = [];
 
-    // 分组：即使没有服务器也展示，便于用户识别
     for (const group of groups) {
       const groupServers = servers.filter(
         (s) => s.group_id === group.id,
@@ -50,7 +49,6 @@ function ServerList({
       grouped.push({ group, servers: groupServers });
     }
 
-    // 未分组的服务器
     const ungroupedServers = servers.filter((s) => s.group_id === null);
     if (ungroupedServers.length > 0) {
       grouped.push({ group: null, servers: ungroupedServers });
@@ -77,31 +75,35 @@ function ServerList({
 
   if (servers.length === 0) {
     return (
-      <div className="server-list-empty">
+      <div className="flex-1 flex flex-col items-center justify-center gap-1 text-sm text-muted-foreground">
         <p>暂无服务器</p>
-        <p className="hint">点击上方按钮添加服务器</p>
+        <p className="text-xs opacity-60">点击上方按钮添加服务器</p>
       </div>
     );
   }
 
   return (
-    <div className="server-list">
+    <div className="flex-1 overflow-y-auto">
       {groupedServers.map(({ group, servers: groupServers }) => (
-        <div key={group?.id ?? 'ungrouped'} className="server-group">
+        <div key={group?.id ?? 'ungrouped'} className="mb-1">
           {group && (
-            <div className="group-header">
-              <span className="group-name">{group.name}</span>
-              <div className="group-actions">
+            <div className="flex items-center justify-between px-3 py-1.5 text-xs font-medium text-muted-foreground hover:bg-accent/50 group">
+              <span className="truncate">{group.name}</span>
+              <div className="hidden group-hover:flex gap-1">
                 <button
-                  className="group-action-btn"
+                  className="p-0.5 rounded hover:bg-accent"
                   onClick={(e) => { e.stopPropagation(); onRenameGroup(group.id!, group.name); }}
                   title="重命名"
-                >✎</button>
+                >
+                  <Pencil className="w-3 h-3" />
+                </button>
                 <button
-                  className="group-action-btn"
+                  className="p-0.5 rounded hover:bg-destructive/20 text-destructive"
                   onClick={(e) => { e.stopPropagation(); onDeleteGroup(group.id!); }}
                   title="删除"
-                >✕</button>
+                >
+                  <Trash2 className="w-3 h-3" />
+                </button>
               </div>
             </div>
           )}
@@ -111,17 +113,21 @@ function ServerList({
             return (
               <div
                 key={server.id}
-                className={`server-item ${activeServerId === server.id ? 'active' : ''}`}
+                className={`flex items-center gap-2 px-3 py-2 cursor-pointer hover:bg-accent/50 ${
+                  activeServerId === server.id ? 'bg-accent/50' : ''
+                }`}
                 onClick={() => server.id && onSelectServer(server.id, server.name)}
                 onDoubleClick={() => server.id && onDoubleClickServer(server.id, server.name)}
                 onContextMenu={(e) => handleContextMenu(e, server)}
               >
                 <div
-                  className={`server-status-dot ${isOnline ? 'online' : 'offline'}`}
+                  className={`w-2 h-2 rounded-full shrink-0 ${
+                    isOnline ? 'bg-green-500' : 'bg-gray-500'
+                  }`}
                 />
-                <div className="server-info">
-                  <span className="server-name">{server.name}</span>
-                  <span className="server-host">{server.host}</span>
+                <div className="flex flex-col min-w-0">
+                  <span className="text-sm truncate">{server.name}</span>
+                  <span className="text-xs text-muted-foreground truncate">{server.host}</span>
                 </div>
               </div>
             );
