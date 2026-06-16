@@ -170,16 +170,16 @@ function Sidebar({
         </button>
       </div>
 
-      <div className="flex gap-1 p-2 border-b border-border">
+      <div className="flex justify-evenly p-2 border-b border-border">
         <button
-          className="flex items-center gap-1 px-2 py-1 text-xs rounded hover:bg-accent text-muted-foreground hover:text-foreground"
+          className="flex-1 flex items-center justify-center gap-1 px-2 py-1 text-xs rounded hover:bg-accent text-muted-foreground hover:text-foreground"
           onClick={onAddServer}
         >
           <Plus className="w-3 h-3" />
           服务器
         </button>
         <button
-          className="flex items-center gap-1 px-2 py-1 text-xs rounded hover:bg-accent text-muted-foreground hover:text-foreground"
+          className="flex-1 flex items-center justify-center gap-1 px-2 py-1 text-xs rounded hover:bg-accent text-muted-foreground hover:text-foreground"
           onClick={onAddGroup}
         >
           <Plus className="w-3 h-3" />

@@ -74,3 +74,25 @@
 ::-webkit-scrollbar-thumb:hover {
   background: hsl(var(--muted-foreground));
 }
+
+/* Native select dropdown */
+select,
+select option {
+  background-color: #1a1b26;
+  color: #e0e6ff;
+}
+
+select:focus {
+  outline: none;
+}
+
+/* Number input spin buttons */
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+input[type="number"] {
+  -moz-appearance: textfield;
+}
