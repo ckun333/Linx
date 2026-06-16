@@ -1,4 +1,7 @@
 import { useState, useCallback } from 'react';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from './ui/dialog';
+import { Button } from './ui/button';
+import { Input } from './ui/input';
 
 interface PasswordPromptServer {
   id: number | null;
@@ -10,25 +13,12 @@ interface PasswordPromptDialogProps {
   open: boolean;
   servers: PasswordPromptServer[];
   onClose: () => void;
-  onConfirm: (passwords: Record<string, string>) => void; // key is server id as string
+  onConfirm: (passwords: Record<string, string>) => void;
 }
 
-/**
- * 导入配置时密码提示对话框
- *
- * 对每个没有密码的服务器显示密码输入框和跳过选项
- */
 function PasswordPromptDialog({ open, servers, onClose, onConfirm }: PasswordPromptDialogProps) {
   const [passwords, setPasswords] = useState<Record<string, string>>({});
   const [skipped, setSkipped] = useState<Record<string, boolean>>({});
-
-  const handleOverlayClick = useCallback((e: React.MouseEvent) => {
-    if (e.target === e.currentTarget) onClose();
-  }, [onClose]);
-
-  const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
-    if (e.key === 'Escape') onClose();
-  }, [onClose]);
 
   const handleConfirm = useCallback(() => {
     const result: Record<string, string> = {};
@@ -52,43 +42,40 @@ function PasswordPromptDialog({ open, servers, onClose, onConfirm }: PasswordPro
     setSkipped((prev) => ({ ...prev, [key]: !prev[key] }));
   }, []);
 
-  if (!open) return null;
-
   return (
-    <div className="modal-overlay" onClick={handleOverlayClick} onKeyDown={handleKeyDown}>
-      <div className="modal">
-        <div className="modal-header">
-          <h3>请输入服务器密码</h3>
-          <button className="modal-close-btn" onClick={onClose}>×</button>
-        </div>
+    <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
+      <DialogContent className="sm:max-w-[450px]">
+        <DialogHeader>
+          <DialogTitle>请输入服务器密码</DialogTitle>
+        </DialogHeader>
 
-        <div className="modal-body">
-          <p style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 16 }}>
+        <div className="space-y-4 py-4">
+          <p className="text-sm text-muted-foreground">
             以下服务器导入配置中不包含密码，请输入密码或跳过。
           </p>
 
-          <div className="password-prompt-list">
+          <div className="space-y-3 max-h-[300px] overflow-y-auto">
             {servers.map((server) => {
               const key = String(server.id ?? server.name);
               return (
-                <div key={key} className="password-prompt-item">
-                  <div className="password-prompt-item-header">
+                <div key={key} className="space-y-2 p-3 rounded-lg border border-border">
+                  <div className="flex items-center justify-between">
                     <div>
-                      <div className="password-prompt-server-name">{server.name}</div>
-                      <div className="password-prompt-server-host">{server.host}</div>
+                      <div className="text-sm font-medium">{server.name}</div>
+                      <div className="text-xs text-muted-foreground">{server.host}</div>
                     </div>
-                    <label className="password-prompt-skip">
+                    <label className="flex items-center gap-1.5 text-sm">
                       <input
                         type="checkbox"
                         checked={!!skipped[key]}
                         onChange={() => toggleSkip(key)}
+                        className="rounded border-input"
                       />
                       跳过
                     </label>
                   </div>
                   {!skipped[key] && (
-                    <input
-                      className="form-input"
+                    <Input
                       type="password"
                       value={passwords[key] ?? ''}
                       onChange={(e) => updatePassword(key, e.target.value)}
@@ -101,16 +88,16 @@ function PasswordPromptDialog({ open, servers, onClose, onConfirm }: PasswordPro
           </div>
         </div>
 
-        <div className="modal-footer">
-          <button className="btn" onClick={onClose}>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>
             取消导入
-          </button>
-          <button className="btn btn-primary" onClick={handleConfirm}>
+          </Button>
+          <Button onClick={handleConfirm}>
             确认导入
-          </button>
-        </div>
-      </div>
-    </div>
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 

@@ -1,4 +1,5 @@
 import { createContext, useContext, useState, useCallback, useRef, type ReactNode } from 'react';
+import { X } from 'lucide-react';
 
 interface Toast {
   id: number;
@@ -45,11 +46,23 @@ export function ToastContainer() {
   const { toasts, dismissToast } = useToast();
   if (toasts.length === 0) return null;
   return (
-    <div className="toast-container">
+    <div className="fixed top-4 right-4 z-50 flex flex-col gap-2">
       {toasts.map((t) => (
-        <div key={t.id} className={`toast toast-${t.type}`}>
-          <span className="toast-message">{t.message}</span>
-          <button className="toast-close" onClick={() => dismissToast(t.id)}>×</button>
+        <div
+          key={t.id}
+          className={`flex items-center gap-2 px-4 py-3 rounded-lg border bg-card shadow-lg min-w-[300px] ${
+            t.type === 'error' ? 'border-destructive' :
+            t.type === 'success' ? 'border-green-500' :
+            'border-primary'
+          }`}
+        >
+          <span className="text-sm flex-1">{t.message}</span>
+          <button
+            className="p-1 rounded hover:bg-accent text-muted-foreground"
+            onClick={() => dismissToast(t.id)}
+          >
+            <X className="w-4 h-4" />
+          </button>
         </div>
       ))}
     </div>

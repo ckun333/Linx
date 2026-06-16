@@ -1,20 +1,20 @@
 import { useState, useEffect, useCallback } from 'react';
+import { Trash2 } from 'lucide-react';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from './ui/dialog';
+import { Button } from './ui/button';
+import { Input } from './ui/input';
+import { Label } from './ui/label';
 import { getServerForEdit, createServer, updateServer, deleteServer, getGroups } from '../hooks/useTauri';
 import type { Server, ServerGroup, AuthType } from '../types';
 
 interface ServerDialogProps {
   open: boolean;
-  serverId: number | null; // null = create mode, number = edit mode
+  serverId: number | null;
   onClose: () => void;
-  onSaved: () => void; // callback after save
+  onSaved: () => void;
   onDeleted: (id: number) => void;
 }
 
-/**
- * 服务器创建/编辑对话框
- *
- * 当 serverId 为 null 时为新建模式，否则为编辑模式
- */
 function ServerDialog({ open, serverId, onClose, onSaved, onDeleted }: ServerDialogProps) {
   const [name, setName] = useState('');
   const [host, setHost] = useState('');
@@ -33,15 +33,12 @@ function ServerDialog({ open, serverId, onClose, onSaved, onDeleted }: ServerDia
 
   const isEdit = serverId !== null;
 
-  // 加载分组列表和服务器数据
   useEffect(() => {
     if (!open) return;
 
-    // 加载分组
     getGroups().then(setGroups).catch(() => {});
 
     if (serverId === null) {
-      // 创建模式：重置表单
       setName('');
       setHost('');
       setPort('22');
@@ -55,7 +52,6 @@ function ServerDialog({ open, serverId, onClose, onSaved, onDeleted }: ServerDia
       return;
     }
 
-    // 编辑模式：加载数据
     setLoading(true);
     setErrors({});
     getServerForEdit(serverId)
@@ -132,85 +128,76 @@ function ServerDialog({ open, serverId, onClose, onSaved, onDeleted }: ServerDia
     }
   }, [serverId, name, onDeleted, onClose]);
 
-  const handleOverlayClick = useCallback((e: React.MouseEvent) => {
-    if (e.target === e.currentTarget) onClose();
-  }, [onClose]);
-
-  const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
-    if (e.key === 'Escape') onClose();
-  }, [onClose]);
-
-  if (!open) return null;
-
   return (
-    <div className="modal-overlay" onClick={handleOverlayClick} onKeyDown={handleKeyDown}>
-      <div className="modal">
-        <div className="modal-header">
-          <h3>{isEdit ? '编辑服务器' : '新建服务器'}</h3>
-          <button className="modal-close-btn" onClick={onClose}>×</button>
-        </div>
+    <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
+      <DialogContent className="sm:max-w-[425px]">
+        <DialogHeader>
+          <DialogTitle>{isEdit ? '编辑服务器' : '新建服务器'}</DialogTitle>
+        </DialogHeader>
 
-        <div className="modal-body">
+        <div className="space-y-4 py-4">
           {loading ? (
-            <div style={{ textAlign: 'center', padding: '20px', color: 'var(--text-muted)' }}>加载中...</div>
+            <div className="text-center py-4 text-muted-foreground">加载中...</div>
           ) : (
             <>
-              {errors.form && <div className="form-error" style={{ marginBottom: 16 }}>{errors.form}</div>}
+              {errors.form && <div className="text-sm text-destructive">{errors.form}</div>}
 
-              <div className="form-group">
-                <label className="form-label">名称</label>
-                <input
-                  className={`form-input ${errors.name ? 'input-error' : ''}`}
-                  type="text"
+              <div className="space-y-2">
+                <Label htmlFor="name">名称</Label>
+                <Input
+                  id="name"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                   placeholder="我的服务器"
+                  className={errors.name ? 'border-destructive' : ''}
                 />
-                {errors.name && <div className="form-error">{errors.name}</div>}
+                {errors.name && <p className="text-xs text-destructive">{errors.name}</p>}
               </div>
 
-              <div className="form-group">
-                <label className="form-label">主机地址</label>
-                <input
-                  className={`form-input ${errors.host ? 'input-error' : ''}`}
-                  type="text"
+              <div className="space-y-2">
+                <Label htmlFor="host">主机地址</Label>
+                <Input
+                  id="host"
                   value={host}
                   onChange={(e) => setHost(e.target.value)}
                   placeholder="192.168.1.100 或 example.com"
+                  className={errors.host ? 'border-destructive' : ''}
                 />
-                {errors.host && <div className="form-error">{errors.host}</div>}
+                {errors.host && <p className="text-xs text-destructive">{errors.host}</p>}
               </div>
 
-              <div className="form-group">
-                <label className="form-label">端口</label>
-                <input
-                  className={`form-input ${errors.port ? 'input-error' : ''}`}
+              <div className="space-y-2">
+                <Label htmlFor="port">端口</Label>
+                <Input
+                  id="port"
                   type="number"
                   value={port}
                   onChange={(e) => setPort(e.target.value)}
                   placeholder="22"
                   min={1}
                   max={65535}
+                  className={errors.port ? 'border-destructive' : ''}
                 />
-                {errors.port && <div className="form-error">{errors.port}</div>}
+                {errors.port && <p className="text-xs text-destructive">{errors.port}</p>}
               </div>
 
-              <div className="form-group">
-                <label className="form-label">用户名</label>
-                <input
-                  className={`form-input ${errors.username ? 'input-error' : ''}`}
-                  type="text"
+              <div className="space-y-2">
+                <Label htmlFor="username">用户名</Label>
+                <Input
+                  id="username"
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
                   placeholder="root"
+                  className={errors.username ? 'border-destructive' : ''}
                 />
-                {errors.username && <div className="form-error">{errors.username}</div>}
+                {errors.username && <p className="text-xs text-destructive">{errors.username}</p>}
               </div>
 
-              <div className="form-group">
-                <label className="form-label">分组</label>
+              <div className="space-y-2">
+                <Label htmlFor="group">分组</Label>
                 <select
-                  className="form-input"
+                  id="group"
+                  className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                   value={groupId ?? ''}
                   onChange={(e) => setGroupId(e.target.value ? Number(e.target.value) : null)}
                 >
@@ -223,83 +210,82 @@ function ServerDialog({ open, serverId, onClose, onSaved, onDeleted }: ServerDia
                 </select>
               </div>
 
-              <div className="form-group">
-                <label className="form-label">认证方式</label>
-                <div className="auth-type-toggle">
-                  <button
-                    className={`auth-type-btn ${authType === 'password' ? 'active' : ''}`}
-                    onClick={() => setAuthType('password')}
+              <div className="space-y-2">
+                <Label>认证方式</Label>
+                <div className="flex gap-2">
+                  <Button
                     type="button"
+                    variant={authType === 'password' ? 'default' : 'outline'}
+                    size="sm"
+                    onClick={() => setAuthType('password')}
                   >
                     密码
-                  </button>
-                  <button
-                    className={`auth-type-btn ${authType === 'key' ? 'active' : ''}`}
-                    onClick={() => setAuthType('key')}
+                  </Button>
+                  <Button
                     type="button"
+                    variant={authType === 'key' ? 'default' : 'outline'}
+                    size="sm"
+                    onClick={() => setAuthType('key')}
                   >
                     密钥
-                  </button>
+                  </Button>
                 </div>
               </div>
 
               {authType === 'password' && (
-                <div className="form-group">
-                  <label className="form-label">密码</label>
-                  <input
-                    className="form-input"
+                <div className="space-y-2">
+                  <Label htmlFor="password">密码</Label>
+                  <Input
+                    id="password"
                     type="password"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     placeholder={hasExistingPassword ? '••••••（不填则保留原密码）' : '输入密码'}
                   />
-                  <div className="form-hint">
+                  <p className="text-xs text-muted-foreground">
                     {hasExistingPassword ? '留空将保留原有密码' : '输入服务器登录密码'}
-                  </div>
+                  </p>
                 </div>
               )}
 
               {authType === 'key' && (
-                <div className="form-group">
-                  <label className="form-label">私钥路径</label>
-                  <input
-                    className="form-input"
-                    type="text"
+                <div className="space-y-2">
+                  <Label htmlFor="keypath">私钥路径</Label>
+                  <Input
+                    id="keypath"
                     value={privateKeyPath}
                     onChange={(e) => setPrivateKeyPath(e.target.value)}
                     placeholder="/home/user/.ssh/id_rsa"
                   />
-                  <div className="form-hint">输入 SSH 私钥的完整路径</div>
+                  <p className="text-xs text-muted-foreground">输入 SSH 私钥的完整路径</p>
                 </div>
               )}
             </>
           )}
         </div>
 
-        <div className="modal-footer">
+        <DialogFooter>
           {isEdit && (
-            <button
-              className="btn btn-danger"
+            <Button
+              variant="destructive"
+              size="sm"
               onClick={handleDelete}
               disabled={saving || loading}
-              style={{ marginRight: 'auto' }}
+              className="mr-auto"
             >
+              <Trash2 className="w-4 h-4 mr-1" />
               删除
-            </button>
+            </Button>
           )}
-          <button className="btn" onClick={onClose} disabled={saving}>
+          <Button variant="outline" onClick={onClose} disabled={saving}>
             取消
-          </button>
-          <button
-            className="btn btn-primary"
-            onClick={handleSave}
-            disabled={saving || loading}
-          >
+          </Button>
+          <Button onClick={handleSave} disabled={saving || loading}>
             {saving ? '保存中...' : '保存'}
-          </button>
-        </div>
-      </div>
-    </div>
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 

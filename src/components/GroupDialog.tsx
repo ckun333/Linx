@@ -1,18 +1,20 @@
 import { useState, useEffect, useCallback } from 'react';
+import { Trash2 } from 'lucide-react';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from './ui/dialog';
+import { Button } from './ui/button';
+import { Input } from './ui/input';
+import { Label } from './ui/label';
 import { createGroup, updateGroup, deleteGroup } from '../hooks/useTauri';
 
 interface GroupDialogProps {
   open: boolean;
-  groupId: number | null; // null = create, number = rename
-  groupName?: string; // current name for rename mode
+  groupId: number | null;
+  groupName?: string;
   onClose: () => void;
   onSaved: () => void;
   onDeleted: (id: number) => void;
 }
 
-/**
- * 分组创建/重命名/删除对话框
- */
 function GroupDialog({ open, groupId, groupName, onClose, onSaved, onDeleted }: GroupDialogProps) {
   const [name, setName] = useState('');
   const [saving, setSaving] = useState(false);
@@ -65,36 +67,24 @@ function GroupDialog({ open, groupId, groupName, onClose, onSaved, onDeleted }: 
     }
   }, [groupId, name, onDeleted, onClose]);
 
-  const handleOverlayClick = useCallback((e: React.MouseEvent) => {
-    if (e.target === e.currentTarget) onClose();
-  }, [onClose]);
-
-  const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
-    if (e.key === 'Escape') onClose();
-  }, [onClose]);
-
   const handleInputKeyDown = useCallback((e: React.KeyboardEvent) => {
     if (e.key === 'Enter') handleSave();
   }, [handleSave]);
 
-  if (!open) return null;
-
   return (
-    <div className="modal-overlay" onClick={handleOverlayClick} onKeyDown={handleKeyDown}>
-      <div className="modal">
-        <div className="modal-header">
-          <h3>{isRename ? '重命名分组' : '新建分组'}</h3>
-          <button className="modal-close-btn" onClick={onClose}>×</button>
-        </div>
+    <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
+      <DialogContent className="sm:max-w-[400px]">
+        <DialogHeader>
+          <DialogTitle>{isRename ? '重命名分组' : '新建分组'}</DialogTitle>
+        </DialogHeader>
 
-        <div className="modal-body">
-          {error && <div className="form-error" style={{ marginBottom: 16 }}>{error}</div>}
+        <div className="space-y-4 py-4">
+          {error && <p className="text-sm text-destructive">{error}</p>}
 
-          <div className="form-group">
-            <label className="form-label">分组名称</label>
-            <input
-              className="form-input"
-              type="text"
+          <div className="space-y-2">
+            <Label htmlFor="group-name">分组名称</Label>
+            <Input
+              id="group-name"
               value={name}
               onChange={(e) => setName(e.target.value)}
               onKeyDown={handleInputKeyDown}
@@ -104,30 +94,28 @@ function GroupDialog({ open, groupId, groupName, onClose, onSaved, onDeleted }: 
           </div>
         </div>
 
-        <div className="modal-footer">
+        <DialogFooter>
           {isRename && (
-            <button
-              className="btn btn-danger"
+            <Button
+              variant="destructive"
+              size="sm"
               onClick={handleDelete}
               disabled={saving}
-              style={{ marginRight: 'auto' }}
+              className="mr-auto"
             >
+              <Trash2 className="w-4 h-4 mr-1" />
               删除
-            </button>
+            </Button>
           )}
-          <button className="btn" onClick={onClose} disabled={saving}>
+          <Button variant="outline" onClick={onClose} disabled={saving}>
             取消
-          </button>
-          <button
-            className="btn btn-primary"
-            onClick={handleSave}
-            disabled={saving}
-          >
+          </Button>
+          <Button onClick={handleSave} disabled={saving}>
             {saving ? '保存中...' : '保存'}
-          </button>
-        </div>
-      </div>
-    </div>
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 

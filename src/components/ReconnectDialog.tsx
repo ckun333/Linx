@@ -1,4 +1,5 @@
-import { useCallback } from 'react';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from './ui/dialog';
+import { Button } from './ui/button';
 
 interface ReconnectDialogProps {
   open: boolean;
@@ -9,41 +10,32 @@ interface ReconnectDialogProps {
 }
 
 function ReconnectDialog({ open, serverName, onOpenNewTab, onReconnect, onCancel }: ReconnectDialogProps) {
-  const handleOverlayClick = useCallback((e: React.MouseEvent) => {
-    if (e.target === e.currentTarget) onCancel();
-  }, [onCancel]);
-
-  const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
-    if (e.key === 'Escape') onCancel();
-  }, [onCancel]);
-
-  if (!open) return null;
-
   return (
-    <div className="modal-overlay" onClick={handleOverlayClick} onKeyDown={handleKeyDown}>
-      <div className="modal">
-        <div className="modal-header">
-          <h3>服务器已连接</h3>
-          <button className="modal-close-btn" onClick={onCancel}>×</button>
-        </div>
-        <div className="modal-body">
-          <p style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 16 }}>
+    <Dialog open={open} onOpenChange={(v) => !v && onCancel()}>
+      <DialogContent className="sm:max-w-[400px]">
+        <DialogHeader>
+          <DialogTitle>服务器已连接</DialogTitle>
+        </DialogHeader>
+
+        <div className="py-4">
+          <p className="text-sm text-muted-foreground">
             「{serverName}」已有活跃连接，请选择操作：
           </p>
         </div>
-        <div className="modal-footer" style={{ flexDirection: 'column', gap: 8 }}>
-          <button className="btn btn-primary" style={{ width: '100%' }} onClick={onOpenNewTab}>
+
+        <div className="flex flex-col gap-2">
+          <Button className="w-full" onClick={onOpenNewTab}>
             打开新窗口
-          </button>
-          <button className="btn" style={{ width: '100%' }} onClick={onReconnect}>
+          </Button>
+          <Button variant="outline" className="w-full" onClick={onReconnect}>
             断开并重新连接
-          </button>
-          <button className="btn" style={{ width: '100%' }} onClick={onCancel}>
+          </Button>
+          <Button variant="ghost" className="w-full" onClick={onCancel}>
             取消
-          </button>
+          </Button>
         </div>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 
