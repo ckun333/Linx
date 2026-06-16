@@ -2,56 +2,55 @@
 @tailwind components;
 @tailwind utilities;
 
-/* ===================================================================
-   Linx 全局样式
-   =================================================================== */
+@layer base {
+  :root {
+    --background: 232 30% 13%;
+    --foreground: 224 83% 94%;
 
-/* CSS Variables */
-:root {
-  --bg-primary: #1a1b26;
-  --bg-secondary: #24283b;
-  --bg-tertiary: #1f2335;
-  --bg-hover: #2f3349;
-  --bg-active: #33467c;
+    --card: 232 30% 15%;
+    --card-foreground: 224 83% 94%;
 
-  --text-primary: #e0e6ff;
-  --text-secondary: #c0caf5;
-  --text-muted: #7982a8;
+    --primary: 220 70% 60%;
+    --primary-foreground: 224 83% 94%;
 
-  --accent: #7aa2f7;
-  --accent-hover: #89b4fa;
-  --success: #9ece6a;
-  --warning: #e0af68;
-  --danger: #f7768e;
+    --secondary: 232 30% 18%;
+    --secondary-foreground: 224 83% 94%;
 
-  --border: #4a5278;
-  --border-strong: #7982a8;
+    --muted: 232 30% 18%;
+    --muted-foreground: 224 56% 63%;
 
-  --sidebar-width: 280px;
-  --panel-width: 320px;
-  --toolbar-height: 40px;
-  --toggle-btn-width: 20px;
+    --accent: 220 70% 60%;
+    --accent-foreground: 224 83% 94%;
 
-  font-family: 'Segoe UI', 'Ubuntu', 'Noto Sans', 'Noto Sans CJK SC',
-    'Microsoft YaHei', 'PingFang SC', sans-serif;
-  font-size: 15px;
-  line-height: 1.5;
-  color: var(--text-primary);
-  background-color: var(--bg-primary);
+    --destructive: 350 78% 60%;
+    --destructive-foreground: 224 83% 94%;
+
+    --success: 93 52% 55%;
+    --warning: 35 78% 63%;
+
+    --border: 232 30% 35%;
+    --input: 232 30% 20%;
+    --ring: 220 70% 60%;
+
+    --radius: 0.5rem;
+  }
 }
 
-/* Reset */
-*,
-*::before,
-*::after {
-  box-sizing: border-box;
-  margin: 0;
-  padding: 0;
-}
-
-html, body, #root {
-  height: 100%;
-  overflow: hidden;
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+    font-family: 'Segoe UI', 'Ubuntu', 'Noto Sans', 'Noto Sans CJK SC',
+      'Microsoft YaHei', 'PingFang SC', sans-serif;
+    font-size: 15px;
+    line-height: 1.5;
+  }
+  html, body, #root {
+    height: 100%;
+    overflow: hidden;
+  }
 }
 
 /* ===================================================================
