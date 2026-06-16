@@ -1,8 +1,9 @@
 import { useState, useCallback, useRef } from 'react';
+import { ChevronLeft, ChevronRight, Terminal } from 'lucide-react';
 import Sidebar from './components/Sidebar';
 import ServerDialog from './components/ServerDialog';
 import GroupDialog from './components/GroupDialog';
-import Terminal from './components/Terminal';
+import TerminalPanel from './components/Terminal';
 import MonitorPanel from './components/MonitorPanel';
 import TabBar from './components/TabBar';
 import ReconnectDialog from './components/ReconnectDialog';
@@ -22,7 +23,6 @@ function App() {
   const [leftOpen, setLeftOpen] = useState(true);
   const [rightOpen, setRightOpen] = useState(true);
 
-  // 多标签页管理
   const [tabs, setTabs] = useState<TabData[]>([]);
   const [activeTabId, setActiveTabId] = useState<string | null>(null);
   const [connectedTabIds, setConnectedTabIds] = useState<Set<string>>(new Set());
@@ -42,7 +42,6 @@ function App() {
 
   const activeTab = tabs.find(t => t.id === activeTabId) ?? null;
 
-  // 打开/切换到指定服务器的标签页
   const openTab = useCallback((serverId: number, serverName: string, autoConnect: boolean, forceNew?: boolean) => {
     const existing = tabsRef.current.find(t => t.serverId === serverId);
     if (existing && !forceNew) {
@@ -117,7 +116,6 @@ function App() {
     setReconnectTarget(null);
   }, [reconnectTarget]);
 
-  // 标签页操作
   const handleSelectTab = useCallback((tabId: string) => {
     setActiveTabId(tabId);
   }, []);
@@ -158,7 +156,6 @@ function App() {
     });
   }, []);
 
-  // 对话框状态管理
   const [dialogState, setDialogState] = useState<DialogState>({ type: 'closed' });
   const [refreshKey, setRefreshKey] = useState(0);
   const handleRefreshServerList = useCallback(() => setRefreshKey((k) => k + 1), []);
@@ -174,7 +171,6 @@ function App() {
   const handleDeleted = useCallback(
     (id: number) => {
       handleRefreshServerList();
-      // 关闭对应服务器标签页
       setTabs(prev => prev.filter(t => t.serverId !== id));
       setActiveTabId(() => {
         const remaining = tabsRef.current.filter(t => t.serverId !== id);
@@ -206,9 +202,13 @@ function App() {
   );
 
   return (
-    <div className="app-layout">
-      {/* 左侧面板 */}
-      <div className={`panel-left ${leftOpen ? 'open' : 'closed'}`}>
+    <div className="flex h-screen overflow-hidden bg-background">
+      {/* Left Panel */}
+      <div
+        className={`shrink-0 border-r border-border bg-card overflow-hidden transition-all duration-200 ${
+          leftOpen ? 'w-64' : 'w-0'
+        }`}
+      >
         <Sidebar
           activeServerId={activeTab?.serverId ?? null}
           onSelectServer={handleSelectServer}
@@ -222,17 +222,17 @@ function App() {
         />
       </div>
 
-      {/* 左侧折叠按钮 */}
+      {/* Left Toggle */}
       <button
-        className="toggle-btn toggle-left"
+        className="w-5 shrink-0 flex items-center justify-center bg-secondary hover:bg-accent transition-colors cursor-pointer"
         onClick={() => setLeftOpen((v) => !v)}
         title={leftOpen ? '收起左侧' : '展开左侧'}
       >
-        {leftOpen ? '◀' : '▶'}
+        {leftOpen ? <ChevronLeft className="w-4 h-4 text-muted-foreground" /> : <ChevronRight className="w-4 h-4 text-muted-foreground" />}
       </button>
 
-      {/* 中间主区域 */}
-      <div className="panel-center">
+      {/* Center Panel */}
+      <div className="flex-1 flex flex-col min-w-0">
         <TabBar
           tabs={tabs}
           activeTabId={activeTabId}
@@ -240,9 +240,11 @@ function App() {
           onCloseTab={handleCloseTab}
         />
         {tabs.length === 0 ? (
-          <div className="welcome-screen">
-            <h1>Linx</h1>
-            <p>从左侧选择一个服务器开始连接</p>
+          <div className="flex-1 flex items-center justify-center text-muted-foreground">
+            <div className="text-center">
+              <Terminal className="w-16 h-16 mx-auto mb-4 opacity-30" />
+              <p className="text-lg">从左侧选择一个服务器开始连接</p>
+            </div>
           </div>
         ) : (
           tabs.map((tab) => {
@@ -250,9 +252,9 @@ function App() {
             return (
               <div
                 key={tab.id}
-                className={`terminal-pane ${tab.id === activeTabId ? 'active' : 'inactive'}`}
+                className={`flex-1 ${tab.id === activeTabId ? 'block' : 'hidden'}`}
               >
-                <Terminal
+                <TerminalPanel
                   key={termKey}
                   tabId={tab.id}
                   serverId={tab.serverId}
@@ -267,17 +269,21 @@ function App() {
         )}
       </div>
 
-      {/* 右侧折叠按钮 */}
+      {/* Right Toggle */}
       <button
-        className="toggle-btn toggle-right"
+        className="w-5 shrink-0 flex items-center justify-center bg-secondary hover:bg-accent transition-colors cursor-pointer"
         onClick={() => setRightOpen((v) => !v)}
         title={rightOpen ? '收起右侧' : '展开右侧'}
       >
-        {rightOpen ? '▶' : '◀'}
+        {rightOpen ? <ChevronRight className="w-4 h-4 text-muted-foreground" /> : <ChevronLeft className="w-4 h-4 text-muted-foreground" />}
       </button>
 
-      {/* 右侧面板 */}
-      <div className={`panel-right ${rightOpen ? 'open' : 'closed'}`}>
+      {/* Right Panel */}
+      <div
+        className={`shrink-0 border-l border-border bg-card overflow-hidden transition-all duration-200 ${
+          rightOpen ? 'w-72' : 'w-0'
+        }`}
+      >
         <MonitorPanel
           serverId={activeTab?.serverId ?? null}
           refreshKey={monitorRefreshKey}
@@ -285,7 +291,7 @@ function App() {
         />
       </div>
 
-      {/* 服务器编辑对话框 */}
+      {/* Dialogs */}
       <ServerDialog
         open={dialogState.type === 'addServer' || dialogState.type === 'editServer'}
         serverId={dialogState.type === 'editServer' ? dialogState.serverId! : null}
@@ -294,7 +300,6 @@ function App() {
         onDeleted={handleDeleted}
       />
 
-      {/* 分组编辑对话框 */}
       <GroupDialog
         open={dialogState.type === 'addGroup' || dialogState.type === 'renameGroup'}
         groupId={dialogState.type === 'renameGroup' ? dialogState.groupId! : null}
@@ -304,7 +309,6 @@ function App() {
         onDeleted={handleRefreshServerList}
       />
 
-      {/* 重连对话框 */}
       <ReconnectDialog
         open={reconnectTarget !== null}
         serverName={reconnectTarget?.serverName ?? ''}
