@@ -44,7 +44,7 @@ function PasswordPromptDialog({ open, servers, onClose, onConfirm }: PasswordPro
 
   return (
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
-      <DialogContent className="sm:max-w-[450px]">
+      <DialogContent className="sm:max-w-[450px]" onInteractOutside={(e) => e.preventDefault()}>
         <DialogHeader>
           <DialogTitle>请输入服务器密码</DialogTitle>
         </DialogHeader>

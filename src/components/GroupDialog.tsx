@@ -73,7 +73,7 @@ function GroupDialog({ open, groupId, groupName, onClose, onSaved, onDeleted }: 
 
   return (
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
-      <DialogContent className="sm:max-w-[400px]">
+      <DialogContent className="sm:max-w-[400px]" onInteractOutside={(e) => e.preventDefault()}>
         <DialogHeader>
           <DialogTitle>{isRename ? '重命名分组' : '新建分组'}</DialogTitle>
         </DialogHeader>

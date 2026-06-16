@@ -12,7 +12,7 @@ interface ReconnectDialogProps {
 function ReconnectDialog({ open, serverName, onOpenNewTab, onReconnect, onCancel }: ReconnectDialogProps) {
   return (
     <Dialog open={open} onOpenChange={(v) => !v && onCancel()}>
-      <DialogContent className="sm:max-w-[400px]">
+      <DialogContent className="sm:max-w-[400px]" onInteractOutside={(e) => e.preventDefault()}>
         <DialogHeader>
           <DialogTitle>服务器已连接</DialogTitle>
         </DialogHeader>
@@ -30,7 +30,7 @@ function ReconnectDialog({ open, serverName, onOpenNewTab, onReconnect, onCancel
           <Button variant="outline" className="w-full" onClick={onReconnect}>
             断开并重新连接
           </Button>
-          <Button variant="ghost" className="w-full" onClick={onCancel}>
+          <Button variant="outline" className="w-full" onClick={onCancel}>
             取消
           </Button>
         </div>

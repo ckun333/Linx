@@ -131,7 +131,7 @@ function ServerDialog({ open, serverId, onClose, onSaved, onDeleted }: ServerDia
 
   return (
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
-      <DialogContent className="sm:max-w-[425px]">
+      <DialogContent className="sm:max-w-[425px]" onInteractOutside={(e) => e.preventDefault()}>
         <DialogHeader>
           <DialogTitle>{isEdit ? '编辑服务器' : '新建服务器'}</DialogTitle>
         </DialogHeader>
