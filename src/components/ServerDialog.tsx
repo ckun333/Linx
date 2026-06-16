@@ -4,6 +4,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { getServerForEdit, createServer, updateServer, deleteServer, getGroups } from '../hooks/useTauri';
 import type { Server, ServerGroup, AuthType } from '../types';
 
@@ -195,19 +196,22 @@ function ServerDialog({ open, serverId, onClose, onSaved, onDeleted }: ServerDia
 
               <div className="space-y-2">
                 <Label htmlFor="group">分组</Label>
-                <select
-                  id="group"
-                  className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                  value={groupId ?? ''}
-                  onChange={(e) => setGroupId(e.target.value ? Number(e.target.value) : null)}
+                <Select
+                  value={groupId !== null ? String(groupId) : ''}
+                  onValueChange={(v) => setGroupId(v ? Number(v) : null)}
                 >
-                  <option value="">无分组</option>
-                  {groups.map((g) => (
-                    <option key={g.id} value={g.id ?? ''}>
-                      {g.name}
-                    </option>
-                  ))}
-                </select>
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="无分组" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="">无分组</SelectItem>
+                    {groups.map((g) => (
+                      <SelectItem key={g.id} value={String(g.id ?? '')}>
+                        {g.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
 
               <div className="space-y-2">
