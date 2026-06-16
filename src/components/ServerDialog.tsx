@@ -203,7 +203,7 @@ function ServerDialog({ open, serverId, onClose, onSaved, onDeleted }: ServerDia
                   <SelectTrigger className="w-full">
                     <SelectValue placeholder="无分组" />
                   </SelectTrigger>
-                  <SelectContent>
+                  <SelectContent position="popper" align="start" className="w-[var(--radix-select-trigger-width)]">
                     <SelectItem value="">无分组</SelectItem>
                     {groups.map((g) => (
                       <SelectItem key={g.id} value={String(g.id ?? '')}>
