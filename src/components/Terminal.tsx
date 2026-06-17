@@ -2,10 +2,10 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import { Terminal as XtermTerminal } from 'xterm';
 import { FitAddon } from 'xterm-addon-fit';
 import { WebLinksAddon } from 'xterm-addon-web-links';
-import { listen, type UnlistenFn } from '@tauri-apps/api/event';
+import { listen, emit, type UnlistenFn } from '@tauri-apps/api/event';
 import { Plug, Unplug } from 'lucide-react';
 import { Button } from './ui/button';
-import { startShell, writeSsh, resizeSsh, disconnectSsh, getServers } from '../hooks/useTauri';
+import { startShell, resizeSsh, disconnectSsh, getServers } from '../hooks/useTauri';
 
 import 'xterm/css/xterm.css';
 
@@ -102,7 +102,7 @@ function Terminal({ serverId, tabId, shouldAutoConnect, isActive, onConnected, o
         inputBufferRef.current = '';
         inputTimerRef.current = null;
         if (buffered.length > 0) {
-          writeSsh(tabId, buffered).catch((err) => {
+          emit('terminal-input', { sessionId: tabId, data: buffered }).catch((err) => {
             termRef.current?.writeln(`\x1b[31m写入失败: ${err}\x1b[0m`);
           });
         }

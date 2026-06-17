@@ -2,6 +2,8 @@ use std::collections::HashMap;
 use std::sync::Mutex;
 
 use anyhow::Result;
+use tauri::Listener;
+use tauri::Manager;
 
 mod commands;
 mod crypto;
@@ -87,6 +89,24 @@ pub fn run() {
             commands::import_config_from_file,
             commands::confirm_import_config,
         ])
+        .setup(|app| {
+            let handle = app.handle().clone();
+            handle.clone().listen("terminal-input", move |event| {
+                if let Ok(payload) = serde_json::from_str::<serde_json::Value>(event.payload()) {
+                    let session_id = payload["sessionId"].as_str().unwrap_or("");
+                    let data = payload["data"].as_str().unwrap_or("");
+                    if data.is_empty() || session_id.is_empty() {
+                        return;
+                    }
+                    if let Ok(shells) = handle.state::<AppState>().shells.lock() {
+                        if let Some(shell) = shells.get(session_id) {
+                            let _ = shell.write_stdin(data.as_bytes());
+                        }
+                    }
+                }
+            });
+            Ok(())
+        })
         .run(tauri::generate_context!())
         .expect("启动 Linx 失败");
 }

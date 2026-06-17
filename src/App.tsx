@@ -42,6 +42,8 @@ function App() {
 
   const activeTab = tabs.find(t => t.id === activeTabId) ?? null;
 
+  const clickTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   const openTab = useCallback((serverId: number, serverName: string, autoConnect: boolean, forceNew?: boolean) => {
     const existing = tabsRef.current.find(t => t.serverId === serverId);
     if (existing && !forceNew) {
@@ -62,17 +64,32 @@ function App() {
   }, []);
 
   const handleSelectServer = useCallback((serverId: number, serverName: string) => {
-    openTab(serverId, serverName, false);
+    if (clickTimerRef.current) {
+      clearTimeout(clickTimerRef.current);
+    }
+    clickTimerRef.current = setTimeout(() => {
+      clickTimerRef.current = null;
+      openTab(serverId, serverName, false);
+    }, 200);
   }, [openTab]);
 
   const handleDoubleClickServer = useCallback((serverId: number, serverName: string) => {
-    const existing = tabsRef.current.find(t => t.serverId === serverId);
-    if (existing && connectedTabIdsRef.current.has(existing.id)) {
+    if (clickTimerRef.current) {
+      clearTimeout(clickTimerRef.current);
+      clickTimerRef.current = null;
+    }
+    const at = tabsRef.current.find(t => t.id === activeTabId);
+    if (at && at.serverId === serverId && connectedTabIdsRef.current.has(at.id)) {
+      setReconnectTarget({ serverId, serverName, existingTabId: at.id });
+      return;
+    }
+    const existing = tabsRef.current.find(t => t.serverId === serverId && connectedTabIdsRef.current.has(t.id));
+    if (existing) {
       setReconnectTarget({ serverId, serverName, existingTabId: existing.id });
       return;
     }
     openTab(serverId, serverName, true);
-  }, [openTab]);
+  }, [openTab, activeTabId]);
 
   const handleOpenNewTab = useCallback(() => {
     if (!reconnectTarget) return;
